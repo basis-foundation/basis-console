@@ -22,6 +22,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from basis_console.gateway import GatewayClient, GatewayStatusReport
 from basis_console.sample_data import (
     SAMPLE_DATA_NOTICE,
     sample_audit_events,
@@ -47,9 +48,18 @@ def _base_context(request: Request, active: str) -> dict[str, object]:
     return {"request": request, "nav": _NAV, "active": active}
 
 
+def _gateway_status(request: Request) -> GatewayStatusReport:
+    """Probe gateway connectivity for display. Never raises into the view."""
+    client: GatewayClient | None = getattr(request.app.state, "gateway_client", None)
+    if client is None:
+        client = GatewayClient(base_url=None)
+    return client.check_status()
+
+
 @router.get("/", response_class=HTMLResponse, summary="Console home / status page")
 def index(request: Request) -> HTMLResponse:
     ctx = _base_context(request, active="/")
+    ctx["gateway"] = _gateway_status(request)
     return templates.TemplateResponse(request, "index.html", ctx)
 
 

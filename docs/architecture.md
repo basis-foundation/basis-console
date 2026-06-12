@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phase 1)
+# basis-console — Architecture Notes (Phases 1–2)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -60,6 +60,52 @@ These are invariants, not preferences. Phase 1 honors them by construction.
    console. Enforcement correctness, audit completeness, and authorization
    semantics must not depend on the console's presence.
 
+## Gateway-first integration rule
+
+The console reaches the BASIS authorization system **only through
+`basis-gateway`**. This is invariant #4 ("no gateway bypass") and #5
+("no kernel client") made concrete:
+
+- The console never imports `basis-core` and never opens a connection to the
+  kernel. The `basis_console.gateway` package is the single egress point, and it
+  talks exclusively to the gateway's HTTP surface.
+- Whatever the console eventually displays — policy state, decision history,
+  audit records — it must obtain from gateway-provided endpoints. It does not
+  hold an independent copy or an alternate path to that data.
+- When the gateway is unreachable, the console reports the outage and surfaces
+  nothing live. It must never substitute local authorization logic or cached
+  decisions for live gateway data.
+
+## Phase 2 gateway status scope
+
+Phase 2 implements the *connectivity* slice of gateway integration and nothing
+more:
+
+- A gateway client (`basis_console.gateway.client.GatewayClient`) probes the
+  gateway's operational endpoints, `/health` and `/ready`, using `httpx` with a
+  configurable timeout (`GATEWAY_TIMEOUT_SECONDS`).
+- The probe result is a typed `GatewayStatusReport` with a `GatewayStatus` of
+  `not_configured`, `reachable`, `ready`, `unreachable`, or `error`. The client
+  turns every network failure into one of these states and never raises into a
+  UI route or the readiness probe.
+- `GATEWAY_BASE_URL` is optional. Unset → `not_configured` and no network call.
+  The console starts cleanly offline; connectivity is probed on demand (when
+  `/ready` or the homepage renders), not at startup, so air-gapped deployments
+  are unaffected.
+- `/ready` reports `gateway_configured` and `gateway_reachable` additively. An
+  unreachable or unconfigured gateway does **not** make the console unready in
+  Phase 2 — a required-gateway mode is intentionally deferred until there is a
+  clear need and a config flag to model it.
+
+### Explicitly future work
+
+Phase 2 does **not** read policy, audit, or decision data, and does **not** call
+`/v1/evaluate`. The gateway does not yet expose console-facing policy/audit
+query APIs; inventing them in the console would violate the gateway-first
+boundary. Those endpoints, and the live policy/audit/simulator views that
+consume them, are a later phase. Until then the policy, audit, and simulate
+pages remain read-only sample data and the simulator submits nowhere.
+
 ## How Phase 1 reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -108,8 +154,8 @@ later without changing the contract.
 | Method | Path        | Type | Purpose                                              |
 | ------ | ----------- | ---- | ---------------------------------------------------- |
 | GET    | `/health`   | JSON | Liveness probe.                                      |
-| GET    | `/ready`    | JSON | Readiness probe (per-component state).               |
-| GET    | `/`         | HTML | Status / landing page.                               |
+| GET    | `/ready`    | JSON | Readiness probe; includes gateway connectivity state.|
+| GET    | `/`         | HTML | Status / landing page with gateway status panel.     |
 | GET    | `/policies` | HTML | Policy viewer placeholder (sample data, read-only).  |
 | GET    | `/simulate` | HTML | Decision simulator placeholder (form, not wired up). |
 | GET    | `/audit`    | HTML | Audit viewer placeholder (sample data, read-only).   |
