@@ -49,10 +49,15 @@ class ConsoleConfig(BaseSettings):  # type: ignore[misc]
         default="local", alias="ENVIRONMENT"
     )
 
-    # Base URL of the basis-gateway this console will eventually talk to. It is
-    # NOT contacted in Phase 1 — the console renders sample data only — but the
-    # value is configurable from day one so no public URL is ever baked in.
-    gateway_base_url: str = Field(default="http://localhost:8000", alias="GATEWAY_BASE_URL")
+    # Base URL of the basis-gateway. Optional: when unset, the console reports
+    # gateway status as "not_configured" and runs in sample-only mode. No public
+    # URL is ever baked in — operators point this at their own gateway.
+    gateway_base_url: str | None = Field(default=None, alias="GATEWAY_BASE_URL")
+
+    # Timeout (seconds) for gateway reachability/readiness probes. Kept short so
+    # an unreachable gateway degrades the status panel quickly rather than
+    # blocking a page render. Must be > 0.
+    gateway_timeout_seconds: float = Field(default=2.0, alias="GATEWAY_TIMEOUT_SECONDS", gt=0)
 
     @field_validator("log_level")
     @classmethod

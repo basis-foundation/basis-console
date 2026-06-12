@@ -19,10 +19,13 @@ from __future__ import annotations
 from typing import Any
 
 # Marker surfaced in every view so operators are never misled into thinking the
-# console is showing live system state in Phase 1.
+# console is showing live system state. As of Phase 2 the console can report
+# gateway connectivity, but it still consumes NO live gateway policy/audit APIs
+# and never evaluates decisions locally.
 SAMPLE_DATA_NOTICE = (
-    "Sample data — illustrative only. Live policy, decision, and audit data will "
-    "be sourced from basis-gateway in a later phase."
+    "Sample data — illustrative only. No live gateway policy, decision, or audit "
+    "APIs are consumed yet, and the console never evaluates decisions locally. "
+    "Live data will be sourced from basis-gateway in a later phase."
 )
 
 

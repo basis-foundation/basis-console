@@ -15,8 +15,22 @@ def test_default_config_loads():
     assert config.port == 8080
     assert config.log_level == "INFO"
     assert config.environment == "local"
-    # No hardcoded public URL — defaults to a local gateway address.
-    assert config.gateway_base_url == "http://localhost:8000"
+    # Gateway base URL is optional and unset by default (no public URL baked in).
+    assert config.gateway_base_url is None
+    # Timeout has a safe non-zero default.
+    assert config.gateway_timeout_seconds == 2.0
+
+
+def test_gateway_timeout_override(monkeypatch):
+    monkeypatch.setenv("GATEWAY_TIMEOUT_SECONDS", "5.5")
+    config = ConsoleConfig()
+    assert config.gateway_timeout_seconds == 5.5
+
+
+def test_gateway_timeout_must_be_positive(monkeypatch):
+    monkeypatch.setenv("GATEWAY_TIMEOUT_SECONDS", "0")
+    with pytest.raises(ValidationError):
+        ConsoleConfig()
 
 
 def test_env_override_host_and_port(monkeypatch):

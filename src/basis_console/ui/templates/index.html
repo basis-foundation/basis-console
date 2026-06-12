@@ -10,6 +10,49 @@
     audit activity.
   </p>
 
+  <section class="status-panel">
+    <h2>Status</h2>
+    <dl class="kv">
+      <dt>Console</dt>
+      <dd><span class="badge ok">running</span></dd>
+
+      <dt>Gateway integration</dt>
+      <dd><span class="badge gw-{{ gateway.status.value }}">{{ gateway.status.value }}</span></dd>
+
+      <dt>Gateway URL</dt>
+      <dd>
+        {% if gateway.base_url %}<code>{{ gateway.base_url }}</code>{% else %}<span class="muted">not configured</span>{% endif %}
+      </dd>
+    </dl>
+
+    {% if gateway.status.value == "not_configured" %}
+      <p class="notice">
+        Gateway integration is not configured. Set <code>GATEWAY_BASE_URL</code>
+        to point the console at a basis-gateway instance. The console runs in
+        sample-only mode until then.
+      </p>
+    {% elif gateway.status.value == "ready" %}
+      <p class="notice ok-notice">
+        Gateway is reachable and reports ready. The console still consumes no
+        live policy or audit APIs in this phase.
+      </p>
+    {% elif gateway.status.value == "reachable" %}
+      <p class="notice warn-notice">
+        Gateway is reachable but not reporting ready{% if gateway.detail %} ({{ gateway.detail }}){% endif %}.
+      </p>
+    {% elif gateway.status.value == "unreachable" %}
+      <p class="notice warn-notice">
+        Gateway is configured but could not be contacted{% if gateway.detail %} ({{ gateway.detail }}){% endif %}.
+        The console will not fall back to local authorization behavior — it simply
+        cannot surface live gateway state right now.
+      </p>
+    {% else %}
+      <p class="notice warn-notice">
+        Gateway returned an unexpected response{% if gateway.detail %} ({{ gateway.detail }}){% endif %}.
+      </p>
+    {% endif %}
+  </section>
+
   <div class="cards">
     <a class="card" href="/policies">
       <h2>Policies</h2>

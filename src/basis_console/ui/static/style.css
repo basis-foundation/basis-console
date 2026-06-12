@@ -81,6 +81,36 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 .card h2 { margin: 0 0 0.35rem; font-size: 1.05rem; }
 .card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
 
+.status-panel {
+  margin: 1.5rem 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+.status-panel h2 { margin-top: 0; }
+.muted { color: var(--muted); }
+.ok-notice { border-left-color: var(--ok); }
+.warn-notice { border-left-color: var(--deny); }
+
+.badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 0.1rem 0.65rem;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.badge.ok { background: rgba(63, 185, 80, 0.15); border-color: var(--ok); color: var(--ok); }
+.badge.gw-ready { background: rgba(63, 185, 80, 0.15); border-color: var(--ok); color: var(--ok); }
+.badge.gw-reachable { background: rgba(78, 161, 211, 0.15); border-color: var(--accent); color: var(--accent); }
+.badge.gw-not_configured { color: var(--muted); }
+.badge.gw-unreachable,
+.badge.gw-error { background: rgba(248, 81, 73, 0.15); border-color: var(--deny); color: var(--deny); }
+
 .boundary {
   margin-top: 2rem;
   background: var(--surface);

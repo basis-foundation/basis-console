@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from basis_console.api.routes import router as api_router
 from basis_console.config import configure_logging, load_config
+from basis_console.gateway import GatewayClient
 from basis_console.readiness import get_readiness_state
 from basis_console.ui.views import router as ui_router
 
@@ -39,13 +40,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config = load_config()
         configure_logging(config.log_level)
         app.state.config = config
+        # Construct the gateway client once. No network call happens here — the
+        # console must start cleanly offline / air-gapped. Connectivity is probed
+        # on demand when /ready or the status panel is rendered.
+        app.state.gateway_client = GatewayClient(
+            base_url=config.gateway_base_url,
+            timeout=config.gateway_timeout_seconds,
+        )
         log.info(
             "basis-console starting service=%s env=%s host=%s port=%s gateway=%s",
             config.service_name,
             config.environment,
             config.host,
             config.port,
-            config.gateway_base_url,
+            config.gateway_base_url or "(not configured)",
         )
         state.mark_ready("configuration_loaded")
         log.info("Configuration loaded; basis-console ready")
