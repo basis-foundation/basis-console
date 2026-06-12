@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Simulate{% endblock %}
+{% block content %}
+  <h1>Decision Simulator</h1>
+  <p class="lead">
+    This form establishes the decision-request shape an operator would submit:
+    a subject, a resource, and an action. In Phase 1 it is a placeholder and does
+    not submit anywhere — the console does not evaluate decisions and does not
+    contact the gateway yet.
+  </p>
+  <p class="notice">{{ notice }}</p>
+
+  <form class="sim-form" onsubmit="return false;" aria-label="Decision simulator (placeholder)">
+    <label for="subject">Subject</label>
+    <input id="subject" name="subject" type="text" placeholder="e.g. alice" disabled>
+
+    <label for="resource">Resource</label>
+    <input id="resource" name="resource" type="text" placeholder="e.g. hvac:zone-a" disabled>
+
+    <label for="action">Action</label>
+    <input id="action" name="action" type="text" placeholder="e.g. write:hvac:setpoint" disabled>
+
+    <button type="submit" disabled>Simulate (disabled in Phase 1)</button>
+  </form>
+
+  <section class="boundary">
+    <h3>Why this is not wired up yet</h3>
+    <p>
+      Evaluation belongs to <code>basis-core</code>, reached through
+      <code>basis-gateway</code>. A later phase will submit this request to the
+      gateway's authenticated evaluation endpoint and render the returned
+      decision. The console never evaluates the request itself.
+    </p>
+  </section>
+{% endblock %}

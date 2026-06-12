@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Audit{% endblock %}
+{% block content %}
+  <h1>Audit Viewer</h1>
+  <p class="lead">
+    Audit events will appear here. Audit records remain evidence, not enforcement.
+    The console displays records produced by <code>basis-core</code> and
+    <code>basis-gateway</code> — it does not produce, supplement, or alter them.
+  </p>
+  <p class="notice">{{ notice }}</p>
+
+  <h2>Recent decision outcomes</h2>
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Time</th><th>Subject</th><th>Action</th><th>Resource</th><th>Outcome</th><th>Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in decisions %}
+        <tr>
+          <td class="mono">{{ d.timestamp }}</td>
+          <td>{{ d.subject_id }}</td>
+          <td class="mono">{{ d.action }}</td>
+          <td class="mono">{{ d.resource_id }}</td>
+          <td><span class="outcome {{ d.outcome }}">{{ d.outcome }}</span></td>
+          <td>{{ d.reason }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Audit records</h2>
+  {% for e in events %}
+    <article class="record">
+      <div class="record-head">
+        <span class="record-title mono">{{ e.event_id }}</span>
+        <span class="outcome {{ e.outcome }}">{{ e.outcome }}</span>
+      </div>
+      <dl class="kv">
+        <dt>Type</dt><dd><code>{{ e.event_type }}</code></dd>
+        <dt>Correlation</dt><dd class="mono">{{ e.correlation_id }}</dd>
+        <dt>Subject</dt><dd>{{ e.subject_id }} ({{ e.subject_roles | join(", ") }})</dd>
+        <dt>Action</dt><dd><code>{{ e.action }}</code> on <code>{{ e.resource_id }}</code></dd>
+        <dt>Reason</dt><dd>{{ e.reason }}</dd>
+        <dt>Evaluated by</dt><dd>{{ e.evaluated_by }} &middot; policy {{ e.policy_version }}</dd>
+        <dt>Time</dt><dd class="mono">{{ e.timestamp }}</dd>
+      </dl>
+    </article>
+  {% endfor %}
+{% endblock %}

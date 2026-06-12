@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "basis-console"
+version = "0.1.0"
+description = "Human-facing operational interface for the BASIS ecosystem (read-only Phase 1 skeleton)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "jinja2>=3.1.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "httpx>=0.27.0",
+    "mypy>=1.10.0",
+    "ruff>=0.4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/basis_console"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "PIE", "RET", "SIM", "TID"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+
+# FastAPI, Starlette, and Jinja2 do not ship py.typed markers in all installed
+# versions. Suppress import-not-found / import-untyped errors narrowly so the
+# rest of the codebase stays fully strict. Untyped-decorator errors that are a
+# downstream consequence of the missing stubs are covered by the route-module
+# override below.
+[[tool.mypy.overrides]]
+module = ["fastapi", "fastapi.*", "starlette", "starlette.*", "jinja2", "jinja2.*"]
+ignore_missing_imports = true
+
+# pydantic-settings ships a py.typed marker but may not be installed in all
+# type-checking environments. Ignore missing stubs narrowly; the BaseSettings
+# subclass in config.py carries an inline type: ignore[misc].
+[[tool.mypy.overrides]]
+module = ["pydantic_settings"]
+ignore_missing_imports = true
+
+# ConsoleConfig subclasses BaseSettings from pydantic-settings. When
+# pydantic-settings is absent the type: ignore[misc] on the class line is
+# needed; when it IS installed mypy flags it as unused. Disable
+# warn_unused_ignores for this module so the ignore coexists across both
+# environments.
+[[tool.mypy.overrides]]
+module = ["basis_console.config"]
+warn_unused_ignores = false
+
+# FastAPI route decorators (@router.get, etc.) are untyped in environments where
+# FastAPI stubs are absent or incomplete. The [misc] "untyped decorator makes
+# function untyped" errors are a downstream consequence of the missing stubs.
+# Disable disallow_untyped_decorators narrowly for the route/view modules and
+# the app factory; all other strict-mode checks remain fully enforced.
+[[tool.mypy.overrides]]
+module = ["basis_console.api.routes", "basis_console.ui.views", "basis_console.main"]
+disallow_untyped_decorators = false

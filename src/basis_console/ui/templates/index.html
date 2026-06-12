@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Status{% endblock %}
+{% block content %}
+  <h1>BASIS Console</h1>
+  <p class="status"><span class="dot ok"></span> Status: running</p>
+
+  <p class="lead">
+    This is the human-facing operational interface for the BASIS ecosystem. It
+    provides read-only visibility into policy state, authorization decisions, and
+    audit activity.
+  </p>
+
+  <div class="cards">
+    <a class="card" href="/policies">
+      <h2>Policies</h2>
+      <p>Review the policies the system reports as loaded. Read-only.</p>
+    </a>
+    <a class="card" href="/simulate">
+      <h2>Simulate</h2>
+      <p>Explore the decision-request shape: subject, resource, action.</p>
+    </a>
+    <a class="card" href="/audit">
+      <h2>Audit</h2>
+      <p>Read recent decision outcomes and audit records. Read-only.</p>
+    </a>
+  </div>
+
+  <section class="boundary">
+    <h3>What this console is not</h3>
+    <p>
+      The console does not evaluate authorization decisions, authenticate users,
+      normalize protocols, or produce audit records. Those responsibilities
+      belong to <code>basis-core</code>, <code>basis-gateway</code>, and
+      <code>basis-adapters</code>. In production the console reaches the system
+      only through the gateway.
+    </p>
+  </section>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Policies{% endblock %}
+{% block content %}
+  <h1>Policy Viewer</h1>
+  <p class="lead">
+    Policy visibility will appear here. The console will not own policy
+    evaluation — it displays the policy state the gateway returns from the kernel.
+  </p>
+  <p class="notice">{{ notice }}</p>
+
+  {% for policy in policies %}
+    <article class="record">
+      <div class="record-head">
+        <span class="record-title">{{ policy.rule_name }}</span>
+        <span class="tag">{{ policy.rule_type }}</span>
+      </div>
+      <p class="record-desc">{{ policy.description }}</p>
+      <dl class="kv">
+        <dt>Actions</dt>
+        <dd>
+          {% for action in policy.actions %}<code>{{ action }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        </dd>
+        <dt>Roles</dt>
+        <dd>
+          {% for role in policy.roles %}<code>{{ role }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        </dd>
+        <dt>Resource scope</dt>
+        <dd><code>{{ policy.resource_scope }}</code></dd>
+      </dl>
+    </article>
+  {% endfor %}
+{% endblock %}
