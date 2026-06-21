@@ -46,14 +46,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.gateway_client = GatewayClient(
             base_url=config.gateway_base_url,
             timeout=config.gateway_timeout_seconds,
+            bearer_token=config.gateway_bearer_token,
         )
+        # The Bearer token is deliberately omitted from this log line — only its
+        # presence (not its value) is reported.
         log.info(
-            "basis-console starting service=%s env=%s host=%s port=%s gateway=%s",
+            "basis-console starting service=%s env=%s host=%s port=%s gateway=%s eval=%s",
             config.service_name,
             config.environment,
             config.host,
             config.port,
             config.gateway_base_url or "(not configured)",
+            "enabled" if config.gateway_evaluation_enabled else "disabled",
         )
         state.mark_ready("configuration_loaded")
         log.info("Configuration loaded; basis-console ready")

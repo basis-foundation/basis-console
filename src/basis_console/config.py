@@ -59,6 +59,27 @@ class ConsoleConfig(BaseSettings):  # type: ignore[misc]
     # blocking a page render. Must be > 0.
     gateway_timeout_seconds: float = Field(default=2.0, alias="GATEWAY_TIMEOUT_SECONDS", gt=0)
 
+    # Optional server-side Bearer token for live gateway-backed simulation
+    # (Phase 4). The gateway requires a verified Bearer token on /v1/evaluate and
+    # derives subject identity from it. When set, the console sends this token as
+    # the Authorization header on /v1/evaluate; when unset, live evaluation is
+    # disabled and the simulator stays preview-only.
+    #
+    # Security: this value is for local/dev/operator-controlled environments. It
+    # is never displayed in the UI, never written to logs, and never rendered in
+    # any page. ``repr=False`` keeps it out of accidental object reprs. The
+    # console is not an identity provider and does no OIDC login or token refresh.
+    gateway_bearer_token: str | None = Field(default=None, alias="GATEWAY_BEARER_TOKEN", repr=False)
+
+    @property
+    def gateway_evaluation_enabled(self) -> bool:
+        """True when live gateway evaluation can be attempted.
+
+        Requires both a gateway base URL and a Bearer token, since the gateway
+        rejects unauthenticated /v1/evaluate calls.
+        """
+        return bool(self.gateway_base_url) and bool(self.gateway_bearer_token)
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:

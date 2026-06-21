@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 3**: the read-only skeleton, the gateway connection-status display, and a functional **decision-simulator request builder**. An operator can now construct a realistic authorization request and preview the normalized request shape that a later phase will submit to `basis-gateway`. The simulator **does not evaluate decisions** — it validates input and renders the request shape only. The console still consumes no live policy, audit, or decision APIs, and it never evaluates authorization itself.
+This repository is at **Phase 4**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, and an optional **gateway-backed simulation** path. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 ```
 basis-console is a human-facing operational interface.
@@ -69,7 +69,7 @@ Policy, simulator, and audit pages still render **local sample data only**. The 
 
 In the production interaction model the console reaches the authorization system **only through `basis-gateway`**. The gateway authenticates the request, normalizes identity, invokes the kernel when evaluation is needed, and assembles the audit record. A console that talked to `basis-core` directly would bypass authentication, enforcement, and audit assembly — so this repository has no dependency on `basis-core` and the gateway package never imports it.
 
-**Phase 3 (decision simulator — this phase):**
+**Phase 3 (decision simulator):**
 
 - A functional **request builder** at `GET /simulate` where an operator enters a subject identifier and type, an action, a resource identifier and type, and optional `key=value` context.
 - `POST /simulate` validates and sanitizes the input and renders a **normalized request preview** as formatted JSON, alongside an explanation of every field.
@@ -79,17 +79,7 @@ In the production interaction model the console reaches the authorization system
 
 This is the core boundary of Phase 3. Submitting the form **does not call `basis-gateway`** and produces **no allow/deny outcome**. The console validates input, builds a preview object, and renders it — nothing more. The accepted actions (`read`, `write`, `execute`, `browse`, `subscribe`) are the normalized verbs `basis-adapters` already emits; the preview uses `basis-core` `DecisionRequest` field names (`subject_id`, `action`, `resource_id`, `context`) so a later swap is small, but enforcement-path fields the gateway/kernel populate (`request_id`, `timestamp`, resolved `subject_roles`) are deliberately not fabricated.
 
-#### Future gateway evaluation path
-
-Live evaluation is a later phase and must flow strictly through the gateway:
-
-```
-Operator → basis-console → basis-gateway → basis-core
-```
-
-A future phase will submit the previewed request to the gateway's authenticated evaluation endpoint (`/v1/evaluate`) and render the returned decision and audit correlation. The console will never evaluate locally, never import `basis-core`, and never bypass the gateway.
-
-#### Validation rules (Phase 3)
+#### Validation rules (preview mode)
 
 - subject identifier, subject type, action, resource identifier, and resource type are required; context is optional;
 - the action must be one of `read`, `write`, `execute`, `browse`, `subscribe`;
@@ -97,7 +87,29 @@ A future phase will submit the previewed request to the gateway's authenticated 
 - context is one `key=value` per line; malformed, oversized, or duplicate entries are rejected;
 - invalid submissions re-render the form with user-friendly errors and the submitted values preserved.
 
-Explicitly **out of scope** (later phases): authentication / OIDC login, user sessions, token storage, calling `/v1/evaluate`, live policy / audit / decision integration, adapter integration, deployment tooling (Docker, Kubernetes), metrics, multi-user sessions, and RBAC.
+**Phase 4 (gateway-backed simulation — this phase):**
+
+The simulator gains an optional second mode that submits the request to the gateway. Preview mode is unchanged and always available.
+
+- **Gateway-evaluation mode** (`POST /simulate` with `mode=gateway`) submits `action` / `resource_id` / `context` to `basis-gateway`'s `POST /v1/evaluate` and renders the gateway's response in a clearly labelled "Gateway response" section: the decision (`allow` / `deny` / `not_applicable`), HTTP status, reason, policy version, correlation ID, and the raw JSON in a collapsible block.
+- **Available only when configured** — both `GATEWAY_BASE_URL` and `GATEWAY_BEARER_TOKEN` must be set (the gateway requires a verified Bearer token). When the base URL is unset the page shows _"Gateway evaluation is not configured…"_; when the token is missing it shows _"Gateway evaluation requires a configured server-side bearer token."_
+- **The console still does not evaluate decisions.** It relays the gateway's response verbatim and never reinterprets it, never computes an outcome, and never imports `basis-core`.
+
+##### Identity boundary (important)
+
+The gateway verified the Bearer token derives subject identity **exclusively** from that token and **rejects** any caller-supplied `subject_id` / `subject_roles` (HTTP 400). The console therefore sends **only** `action` / `resource_id` / `context` to `/v1/evaluate` — never a subject. The form's subject fields are **preview/educational only**; the page states plainly that live evaluation's subject is the token's, not the form's. This avoids any misleading path that would appear to let a user impersonate an arbitrary subject.
+
+##### Token handling
+
+`GATEWAY_BEARER_TOKEN` is an optional, server-side, operator-configured token for local/dev/operator-controlled environments. It is **never displayed in the UI, never logged, and never rendered in any page** — it is used only as the `Authorization: Bearer <token>` header on the `/v1/evaluate` call. The console does **no** OIDC login, no token refresh, and no browser-session token storage; it is not an identity provider. Obtain a token out-of-band from the gateway's configured OIDC issuer.
+
+##### How a gateway response is classified
+
+The client maps the gateway's documented HTTP contract to a typed result, distinguishing: success (200 ALLOW), denied (403 DENY/NOT_APPLICABLE — surfaced, never hidden), unauthorized (401), validation error (400), unavailable (503 or a network failure), and gateway error (500/other). Network and HTTP errors never raise into the UI.
+
+> Note: the gateway validates the action against `basis-core`'s `{verb}:{domain}[:{object}]` naming convention. The preview's single normalized verbs (e.g. `read`) are intentionally simpler, so live evaluation of a bare verb returns a gateway `validation_failed` (400) — which the console displays. See "Architectural concerns" in `docs/architecture.md`.
+
+Explicitly **out of scope** (later phases): OIDC login, user sessions, token refresh, browser-stored tokens, live policy / audit / decision viewers, adapter integration, deployment tooling (Docker, Kubernetes), metrics, multi-user sessions, and RBAC.
 
 ---
 
@@ -146,7 +158,8 @@ All configuration comes from environment variables with safe local defaults. Not
 | `LOG_LEVEL`               | `INFO`          | One of DEBUG, INFO, WARNING, ERROR, CRITICAL.                  |
 | `ENVIRONMENT`             | `local`         | One of local, development, staging, production.                |
 | `GATEWAY_BASE_URL`        | _(unset)_       | Base URL of the basis-gateway. Optional — when unset, gateway status is `not_configured` and the console runs sample-only. No public URL is baked in. |
-| `GATEWAY_TIMEOUT_SECONDS` | `2.0`           | Timeout for gateway `/health` and `/ready` probes. Must be > 0. |
+| `GATEWAY_TIMEOUT_SECONDS` | `2.0`           | Timeout for gateway `/health`, `/ready`, and `/v1/evaluate` calls. Must be > 0. |
+| `GATEWAY_BEARER_TOKEN`    | _(unset)_       | Optional server-side Bearer token enabling gateway-backed simulation. Sent only as `Authorization: Bearer <token>` to `/v1/evaluate`; never displayed, logged, or rendered. For local/dev/operator-controlled use — the console does no OIDC login or token refresh. |
 | `SERVICE_NAME`            | `basis-console` | Service name reported by health/readiness.                     |
 
 The console is designed to sit behind a reverse proxy (Nginx, Caddy, or a cloud load balancer) and serves all static assets locally so it works in air-gapped deployments. Container, systemd, and Kubernetes packaging are deliberately deferred to a later phase; nothing here precludes them.
@@ -185,15 +198,15 @@ basis-console/
     readiness.py       # readiness state tracker
     sample_data.py     # read-only SAMPLE data for placeholder views + scenarios
     simulator.py       # decision-simulator validation + preview builder (Phase 3)
-    gateway/           # gateway client abstraction (Phase 2)
-      client.py        #   httpx-based /health + /ready probe
-      models.py        #   GatewayStatus enum + typed status report
+    gateway/           # gateway client abstraction (Phases 2 + 4)
+      client.py        #   httpx-based /health + /ready probe and /v1/evaluate call
+      models.py        #   GatewayStatus + GatewayEvaluationStatus/Result types
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
     ui/views.py        # /, /policies, /simulate (GET+POST), /audit (HTML)
     ui/templates/      # Jinja2 templates (incl. simulate + examples)
     ui/static/         # locally served CSS (no CDN)
-  tests/               # health, routes, config, gateway, and simulator tests
-  docs/architecture.md # console boundaries and Phase 1 notes
+  tests/               # health, routes, config, gateway, simulator, eval tests
+  docs/architecture.md # console boundaries and phase notes
   pyproject.toml
   Makefile
   README.md

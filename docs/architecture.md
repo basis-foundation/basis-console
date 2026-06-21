@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–3)
+# basis-console — Architecture Notes (Phases 1–4)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -141,21 +141,79 @@ result would be a second, unaudited decision path that could disagree with the
 real one. Previewing the request shape gives operators the educational value of
 the simulator with none of that risk.
 
-### Future live evaluation must go through `basis-gateway`
+### Live evaluation goes through `basis-gateway` (Phase 4)
 
-When live evaluation arrives, the previewed request will be submitted to the
-gateway's authenticated evaluation endpoint (`/v1/evaluate`); the gateway
-authenticates, normalizes identity, invokes `basis-core`, and assembles the
-audit record, and the console renders the returned `DecisionResponse`. The flow
-remains strictly one-way:
+Phase 4 implements the optional live-evaluation path. The previewed request is
+submitted to the gateway's authenticated `/v1/evaluate` endpoint; the gateway
+authenticates the caller, derives identity from the verified token, invokes
+`basis-core`, and assembles the audit record, and the console renders the
+returned decision. The flow remains strictly one-way:
 
 ```
 Operator → basis-console → basis-gateway → basis-core
 ```
 
-The console must never call `/v1/evaluate`-equivalent kernel logic itself,
-never import `basis-core`, and never substitute a local result when the gateway
-is unreachable.
+The console never calls kernel logic itself, never imports `basis-core`, and
+never substitutes a local result when the gateway is unreachable.
+
+## Phase 4 gateway-backed simulation
+
+Phase 4 adds an *optional* second simulator mode. Preview mode is unchanged and
+always available; gateway-evaluation mode submits the request to the gateway and
+displays the gateway's response. The boundaries:
+
+- **The console relays the gateway's decision; it does not make or reinterpret
+  it.** `GatewayClient.evaluate()` POSTs to `/v1/evaluate` and classifies the
+  HTTP response into a typed `GatewayEvaluationResult`
+  (success / denied / unauthorized / validation-error / unavailable /
+  gateway-error). Classifying an HTTP status for display is not deciding: the
+  console never computes an outcome and surfaces the gateway's `outcome`/`reason`
+  verbatim. A 403 DENY/NOT_APPLICABLE is shown, never hidden.
+- **No kernel import, errors never raised into the UI.** The client still never
+  imports `basis-core`; every network/HTTP failure becomes a result status, so
+  routes render safely. No retries are performed.
+- **Gateway owns authentication and enforcement.** `/v1/evaluate` requires a
+  verified `Authorization: Bearer` token. The console holds an optional
+  server-side `GATEWAY_BEARER_TOKEN` and sends it only as that header; it does
+  no OIDC login, no token refresh, and no browser-session storage. The console
+  is not an identity provider. Live evaluation is enabled only when both a base
+  URL and a token are configured; otherwise the page shows a clear configuration
+  warning and stays preview-only.
+
+### Identity boundary
+
+The gateway derives subject identity **exclusively** from the verified Bearer
+token and **rejects** caller-supplied `subject_id` / `subject_roles` (HTTP 400,
+enforced by `EvaluateRequest`). Therefore the console sends **only**
+`action` / `resource_id` / `context` to `/v1/evaluate` — never a subject. The
+simulator's subject fields remain **preview/educational only**, and the UI
+states that live evaluation's subject is the token's, not the form's. The
+console deliberately exposes no subject-override, so there is no path that could
+appear to let a user impersonate an arbitrary subject.
+
+### Token handling
+
+`GATEWAY_BEARER_TOKEN` is stored privately on the `GatewayClient`, never exposed
+via a property, repr, log line, result object, or rendered page. It is used
+solely to construct the `Authorization` header. The startup log reports only
+whether evaluation is enabled, never the token value.
+
+### Architectural concerns discovered
+
+- **Action vocabulary mismatch.** The simulator's preview accepts the five
+  normalized verbs (`read` / `write` / `execute` / `browse` / `subscribe`), but
+  `basis-core`'s `DecisionRequest.action` requires the
+  `{verb}:{domain}[:{object}]` form (e.g. `read:sensor:telemetry`). A bare verb
+  sent to `/v1/evaluate` therefore returns a gateway `validation_failed` (400),
+  which the console displays correctly. A future phase may align the simulator's
+  action input with the gateway's action naming (e.g. richer action entry) so the
+  success path is reachable with operator-entered actions. This is intentionally
+  *not* worked around in the console, which would mean inventing/normalizing
+  semantics it does not own.
+- **No gateway-minted dev token.** `basis-gateway` verifies tokens against a
+  real OIDC issuer (JWKS); it provides no built-in dev/static token. Operators
+  must obtain a token out-of-band. The console correctly treats the token as
+  externally supplied configuration.
 
 ## How the console reflects these boundaries
 
@@ -164,13 +222,15 @@ is unreachable.
   imported kernel models. This keeps the "console is not a kernel client"
   invariant true at the dependency level.
 - **Gateway-only egress.** The console's single egress is the gateway client,
-  which probes the gateway's `/health` and `/ready` endpoints (Phase 2). It
-  never contacts `basis-core` and makes no authorization call to the gateway.
-  `GATEWAY_BASE_URL` is configurable so no public URL is ever baked in.
+  which probes `/health` and `/ready` (Phase 2) and, when explicitly configured,
+  submits to `/v1/evaluate` (Phase 4). It never contacts `basis-core` and never
+  evaluates locally. `GATEWAY_BASE_URL` is configurable so no public URL is ever
+  baked in.
 - **Read-only views.** `/policies` and `/audit` render clearly labelled sample
-  data. The `/simulate` request builder validates input and renders a
-  normalized request preview; it performs no evaluation and makes no gateway
-  call (Phase 3).
+  data. The `/simulate` request builder validates input and renders a normalized
+  request preview with no gateway call; in gateway-evaluation mode it forwards
+  the request to `/v1/evaluate` and relays the gateway's decision verbatim
+  without reinterpreting it (Phases 3–4).
 - **Sample-data labelling.** Every data-bearing page carries a notice making
   clear the content is illustrative and that live data will come from the
   gateway. This preserves the auditability invariant: the console never presents
@@ -203,7 +263,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–3)
+## Endpoints (Phases 1–4)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
@@ -212,7 +272,7 @@ later without changing the contract.
 | GET    | `/`                  | HTML | Status / landing page with gateway status panel.             |
 | GET    | `/policies`          | HTML | Policy viewer placeholder (sample data, read-only).          |
 | GET    | `/simulate`          | HTML | Decision-simulator request builder (optional `?example=`).   |
-| POST   | `/simulate`          | HTML | Validate input + render normalized request preview (no eval).|
+| POST   | `/simulate`          | HTML | Preview mode: validate + render request shape. Gateway mode (`mode=gateway`): forward to gateway `/v1/evaluate` and display the response.|
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
 | GET    | `/audit`             | HTML | Audit viewer placeholder (sample data, read-only).           |
 ```
