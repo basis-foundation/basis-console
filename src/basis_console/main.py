@@ -73,7 +73,9 @@ def create_app() -> FastAPI:
         title="basis-console",
         description=(
             "Human-facing operational interface for the BASIS ecosystem. "
-            "Read-only Phase 1 skeleton. Does not evaluate authorization or "
+            "Read-only with respect to system state (Phase 3): reports gateway "
+            "connection status and provides a decision-simulator request builder "
+            "that previews requests. Does not evaluate authorization or "
             "authenticate users."
         ),
         version="0.1.0",

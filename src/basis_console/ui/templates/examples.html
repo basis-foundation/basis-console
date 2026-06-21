@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Simulator examples{% endblock %}
+{% block content %}
+  <h1>Simulator Sample Scenarios</h1>
+  <p class="lead">
+    Built-in request shapes for the decision simulator. Each shows what an
+    operator would submit. They carry no outcome — the console does not evaluate
+    decisions.
+  </p>
+
+  <p class="notice warn-notice">{{ no_eval_notice }}</p>
+  <p class="notice">{{ notice }}</p>
+
+  {% for s in scenarios %}
+    <article class="record">
+      <div class="record-head">
+        <span class="record-title">{{ s.title }}</span>
+        <a class="badge" href="/simulate?example={{ s.slug }}">Load in simulator</a>
+      </div>
+      <p class="record-desc">{{ s.summary }}</p>
+      <dl class="kv">
+        <dt>Subject</dt><dd>{{ s.subject_id }} (<code>{{ s.subject_type }}</code>)</dd>
+        <dt>Action</dt><dd><code>{{ s.action }}</code></dd>
+        <dt>Resource</dt><dd><code>{{ s.resource_id }}</code> (<code>{{ s.resource_type }}</code>)</dd>
+        <dt>Context</dt>
+        <dd>
+          {% if s.context %}<code>{{ s.context | replace("\n", "; ") }}</code>{% else %}<span class="muted">none</span>{% endif %}
+        </dd>
+      </dl>
+    </article>
+  {% endfor %}
+
+  <section class="boundary">
+    <h3>These are previews, not decisions</h3>
+    <p>
+      Loading a scenario only fills the simulator form. Building a preview shows
+      the normalized request shape. Live evaluation will run through
+      <code>basis-gateway</code> in a later phase.
+    </p>
+  </section>
+{% endblock %}

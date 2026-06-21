@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 2**: the read-only skeleton plus a gateway client abstraction and a gateway connection-status display. The console can now report whether `basis-gateway` is configured, reachable, and ready — but it still does not consume live policy, audit, or decision APIs, and it never evaluates authorization itself.
+This repository is at **Phase 3**: the read-only skeleton, the gateway connection-status display, and a functional **decision-simulator request builder**. An operator can now construct a realistic authorization request and preview the normalized request shape that a later phase will submit to `basis-gateway`. The simulator **does not evaluate decisions** — it validates input and renders the request shape only. The console still consumes no live policy, audit, or decision APIs, and it never evaluates authorization itself.
 
 ```
 basis-console is a human-facing operational interface.
@@ -44,7 +44,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full set of boundarie
 - **Audit viewer** (`GET /audit`) — read-only placeholder backed by local sample data.
 - Configuration, readiness tracking, server-rendered UI, and a test/lint/typecheck toolchain.
 
-**Phase 2 (gateway status — this phase):**
+**Phase 2 (gateway status):**
 
 - A **gateway client abstraction** (`basis_console.gateway`) that probes the gateway's `/health` and `/ready` endpoints over HTTP and returns a typed status report. It never raises a network error into the UI.
 - A **configurable gateway base URL and timeout** (`GATEWAY_BASE_URL`, `GATEWAY_TIMEOUT_SECONDS`).
@@ -68,6 +68,34 @@ Policy, simulator, and audit pages still render **local sample data only**. The 
 ### Why the console does not call `basis-core` directly
 
 In the production interaction model the console reaches the authorization system **only through `basis-gateway`**. The gateway authenticates the request, normalizes identity, invokes the kernel when evaluation is needed, and assembles the audit record. A console that talked to `basis-core` directly would bypass authentication, enforcement, and audit assembly — so this repository has no dependency on `basis-core` and the gateway package never imports it.
+
+**Phase 3 (decision simulator — this phase):**
+
+- A functional **request builder** at `GET /simulate` where an operator enters a subject identifier and type, an action, a resource identifier and type, and optional `key=value` context.
+- `POST /simulate` validates and sanitizes the input and renders a **normalized request preview** as formatted JSON, alongside an explanation of every field.
+- A **`GET /simulate/examples`** page and three loadable, clearly-marked sample scenarios (operator reads AHU temperature; technician writes HVAC setpoint; vendor attempts access to a restricted device).
+
+#### The simulator does not evaluate decisions
+
+This is the core boundary of Phase 3. Submitting the form **does not call `basis-gateway`** and produces **no allow/deny outcome**. The console validates input, builds a preview object, and renders it — nothing more. The accepted actions (`read`, `write`, `execute`, `browse`, `subscribe`) are the normalized verbs `basis-adapters` already emits; the preview uses `basis-core` `DecisionRequest` field names (`subject_id`, `action`, `resource_id`, `context`) so a later swap is small, but enforcement-path fields the gateway/kernel populate (`request_id`, `timestamp`, resolved `subject_roles`) are deliberately not fabricated.
+
+#### Future gateway evaluation path
+
+Live evaluation is a later phase and must flow strictly through the gateway:
+
+```
+Operator → basis-console → basis-gateway → basis-core
+```
+
+A future phase will submit the previewed request to the gateway's authenticated evaluation endpoint (`/v1/evaluate`) and render the returned decision and audit correlation. The console will never evaluate locally, never import `basis-core`, and never bypass the gateway.
+
+#### Validation rules (Phase 3)
+
+- subject identifier, subject type, action, resource identifier, and resource type are required; context is optional;
+- the action must be one of `read`, `write`, `execute`, `browse`, `subscribe`;
+- identifiers must be simple safe strings (letters, digits, and `. _ - : /`); types must be simple slugs;
+- context is one `key=value` per line; malformed, oversized, or duplicate entries are rejected;
+- invalid submissions re-render the form with user-friendly errors and the submitted values preserved.
 
 Explicitly **out of scope** (later phases): authentication / OIDC login, user sessions, token storage, calling `/v1/evaluate`, live policy / audit / decision integration, adapter integration, deployment tooling (Docker, Kubernetes), metrics, multi-user sessions, and RBAC.
 
@@ -155,15 +183,16 @@ basis-console/
     main.py            # FastAPI app factory + lifespan
     config.py          # environment-driven configuration
     readiness.py       # readiness state tracker
-    sample_data.py     # read-only SAMPLE data for placeholder views
+    sample_data.py     # read-only SAMPLE data for placeholder views + scenarios
+    simulator.py       # decision-simulator validation + preview builder (Phase 3)
     gateway/           # gateway client abstraction (Phase 2)
       client.py        #   httpx-based /health + /ready probe
       models.py        #   GatewayStatus enum + typed status report
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
-    ui/views.py        # /, /policies, /simulate, /audit (HTML)
-    ui/templates/      # Jinja2 templates
+    ui/views.py        # /, /policies, /simulate (GET+POST), /audit (HTML)
+    ui/templates/      # Jinja2 templates (incl. simulate + examples)
     ui/static/         # locally served CSS (no CDN)
-  tests/               # health, routes, config, and gateway tests
+  tests/               # health, routes, config, gateway, and simulator tests
   docs/architecture.md # console boundaries and Phase 1 notes
   pyproject.toml
   Makefile

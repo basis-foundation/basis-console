@@ -160,25 +160,66 @@ code {
 .outcome.allow { color: var(--allow); }
 .outcome.deny { color: var(--deny); }
 
-.sim-form { display: grid; grid-template-columns: 8rem 1fr; gap: 0.7rem 1rem; align-items: center; max-width: 560px; margin: 1.25rem 0; }
-.sim-form label { color: var(--muted); }
-.sim-form input {
+.sim-form { display: grid; grid-template-columns: 9rem 1fr; gap: 0.7rem 1rem; align-items: start; max-width: 620px; margin: 1.25rem 0; }
+.sim-form label { color: var(--muted); padding-top: 0.45rem; }
+.sim-form input,
+.sim-form select,
+.sim-form textarea {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.45rem 0.6rem;
   color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  width: 100%;
 }
+.sim-form textarea { resize: vertical; }
+.sim-form input:focus,
+.sim-form select:focus,
+.sim-form textarea:focus { outline: none; border-color: var(--accent); }
 .sim-form button {
   grid-column: 2;
   justify-self: start;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.5rem 1.1rem;
+  color: #08222e;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sim-form button:hover { filter: brightness(1.08); }
+
+.errors {
+  margin: 1.25rem 0;
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid var(--deny);
+  border-left: 3px solid var(--deny);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+}
+.errors h3 { color: var(--deny); margin: 0 0 0.4rem; }
+.errors ul { margin: 0; padding-left: 1.2rem; color: var(--text); }
+
+.preview { margin: 1.75rem 0; }
+.preview .json {
+  display: block;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  color: var(--muted);
-  cursor: not-allowed;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  white-space: pre;
 }
+.preview pre.json { margin: 0.6rem 0 0; }
+.preview pre.json code { background: none; border: none; padding: 0; }
+
+.field-help { margin: 1.75rem 0; }
+.field-help .kv { grid-template-columns: 9rem 1fr; row-gap: 0.55rem; }
+
+.examples { margin-top: 2rem; }
+.examples a.badge { text-decoration: none; }
 
 .footer {
   display: flex;

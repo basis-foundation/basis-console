@@ -3,33 +3,114 @@
 {% block content %}
   <h1>Decision Simulator</h1>
   <p class="lead">
-    This form establishes the decision-request shape an operator would submit:
-    a subject, a resource, and an action. In Phase 1 it is a placeholder and does
-    not submit anywhere — the console does not evaluate decisions and does not
-    contact the gateway yet.
+    Construct a realistic authorization request — a subject, an action, and a
+    resource — and preview the normalized request shape that a later phase will
+    submit to <code>basis-gateway</code>. This is an educational, operator-facing
+    builder, not an enforcement path.
   </p>
-  <p class="notice">{{ notice }}</p>
 
-  <form class="sim-form" onsubmit="return false;" aria-label="Decision simulator (placeholder)">
-    <label for="subject">Subject</label>
-    <input id="subject" name="subject" type="text" placeholder="e.g. alice" disabled>
+  <p class="notice warn-notice">{{ no_eval_notice }}</p>
 
-    <label for="resource">Resource</label>
-    <input id="resource" name="resource" type="text" placeholder="e.g. hvac:zone-a" disabled>
+  {% if loaded_example %}
+    <p class="notice">Loaded sample scenario: <strong>{{ loaded_example }}</strong>. Review and submit to build its preview.</p>
+  {% endif %}
+
+  {% if errors %}
+    <div class="errors" role="alert">
+      <h3>Please correct the following:</h3>
+      <ul>
+        {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form class="sim-form" method="post" action="/simulate" aria-label="Decision simulator request builder">
+    <label for="subject_id">Subject ID</label>
+    <input id="subject_id" name="subject_id" type="text" value="{{ values.subject_id }}"
+           placeholder="e.g. operator-jane" autocomplete="off">
+
+    <label for="subject_type">Subject type</label>
+    <input id="subject_type" name="subject_type" type="text" value="{{ values.subject_type }}"
+           placeholder="e.g. user" autocomplete="off">
 
     <label for="action">Action</label>
-    <input id="action" name="action" type="text" placeholder="e.g. write:hvac:setpoint" disabled>
+    <select id="action" name="action">
+      <option value="" {% if not values.action %}selected{% endif %}>— choose an action —</option>
+      {% for act in allowed_actions %}
+        <option value="{{ act }}" {% if values.action == act %}selected{% endif %}>{{ act }}</option>
+      {% endfor %}
+    </select>
 
-    <button type="submit" disabled>Simulate (disabled in Phase 1)</button>
+    <label for="resource_id">Resource ID</label>
+    <input id="resource_id" name="resource_id" type="text" value="{{ values.resource_id }}"
+           placeholder="e.g. hvac:zone-a" autocomplete="off">
+
+    <label for="resource_type">Resource type</label>
+    <input id="resource_type" name="resource_type" type="text" value="{{ values.resource_type }}"
+           placeholder="e.g. actuator" autocomplete="off">
+
+    <label for="context">Context</label>
+    <textarea id="context" name="context" rows="3"
+              placeholder="optional, one key=value per line&#10;e.g. maintenance_window=true">{{ values.context }}</textarea>
+
+    <button type="submit">Build request preview</button>
   </form>
 
+  {% if preview_json %}
+    <section class="preview" aria-label="Normalized request preview">
+      <h2>Normalized request preview</h2>
+      <p class="muted">
+        This is the request shape only. The gateway and kernel populate
+        enforcement-path fields (<code>request_id</code>, <code>timestamp</code>,
+        resolved <code>subject_roles</code>) — the console does not fabricate them.
+      </p>
+      <pre class="json"><code>{{ preview_json }}</code></pre>
+    </section>
+  {% endif %}
+
+  <section class="field-help">
+    <h2>What each field means</h2>
+    <dl class="kv">
+      {% for name, explanation in field_explanations %}
+        <dt><code>{{ name }}</code></dt>
+        <dd>{{ explanation }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section class="examples">
+    <h2>Sample scenarios</h2>
+    <p class="notice">{{ notice }}</p>
+    <p class="muted">
+      Sample request shapes only — they carry no outcome, because the console
+      does not decide. Load one to populate the form, then build its preview.
+    </p>
+    {% for s in scenarios %}
+      <article class="record">
+        <div class="record-head">
+          <span class="record-title">{{ s.title }}</span>
+          <a class="badge" href="/simulate?example={{ s.slug }}">Load</a>
+        </div>
+        <p class="record-desc">{{ s.summary }}</p>
+        <dl class="kv">
+          <dt>Subject</dt><dd>{{ s.subject_id }} (<code>{{ s.subject_type }}</code>)</dd>
+          <dt>Action</dt><dd><code>{{ s.action }}</code></dd>
+          <dt>Resource</dt><dd><code>{{ s.resource_id }}</code> (<code>{{ s.resource_type }}</code>)</dd>
+        </dl>
+      </article>
+    {% endfor %}
+    <p class="muted">See all scenarios on the <a href="/simulate/examples">examples page</a>.</p>
+  </section>
+
   <section class="boundary">
-    <h3>Why this is not wired up yet</h3>
+    <h3>Where evaluation happens (future integration)</h3>
     <p>
-      Evaluation belongs to <code>basis-core</code>, reached through
+      Evaluation belongs to <code>basis-core</code>, reached only through
       <code>basis-gateway</code>. A later phase will submit this request to the
       gateway's authenticated evaluation endpoint and render the returned
-      decision. The console never evaluates the request itself.
+      decision. The console never evaluates the request itself and never calls
+      <code>basis-core</code> directly:
     </p>
+    <p class="mono">Operator → basis-console → basis-gateway → basis-core</p>
   </section>
 {% endblock %}
