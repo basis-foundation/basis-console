@@ -4,9 +4,10 @@
   <h1>Decision Simulator</h1>
   <p class="lead">
     Construct a realistic authorization request — a subject, an action, and a
-    resource — and preview the normalized request shape that a later phase will
-    submit to <code>basis-gateway</code>. This is an educational, operator-facing
-    builder, not an enforcement path.
+    resource — and preview the normalized request shape. When configured, you can
+    optionally submit it to <code>basis-gateway</code> for a live decision. This
+    is an educational, operator-facing builder, not an enforcement path: the
+    console never decides — it only previews requests and displays gateway responses.
   </p>
 
   <p class="notice warn-notice">{{ no_eval_notice }}</p>
@@ -53,7 +54,12 @@
     <textarea id="context" name="context" rows="3"
               placeholder="optional, one key=value per line&#10;e.g. maintenance_window=true">{{ values.context }}</textarea>
 
-    <button type="submit">Build request preview</button>
+    <div class="form-actions">
+      <button type="submit" name="mode" value="preview">Build request preview</button>
+      {% if gateway_eval_enabled %}
+        <button type="submit" name="mode" value="gateway" class="secondary">Evaluate through basis-gateway</button>
+      {% endif %}
+    </div>
   </form>
 
   {% if preview_json %}
@@ -67,6 +73,74 @@
       <pre class="json"><code>{{ preview_json }}</code></pre>
     </section>
   {% endif %}
+
+  <section class="gateway-eval" aria-label="Gateway evaluation">
+    <h2>Gateway evaluation</h2>
+    <p class="notice">{{ identity_notice }}</p>
+
+    {% if not gateway_configured %}
+      <p class="notice warn-notice">
+        Gateway evaluation is not configured.
+        Set <code>GATEWAY_BASE_URL</code> and the required gateway credentials to
+        enable live gateway-backed simulation.
+      </p>
+    {% elif not gateway_token_present %}
+      <p class="notice warn-notice">
+        Gateway evaluation requires a configured server-side bearer token.
+      </p>
+    {% else %}
+      <p class="muted">
+        Live evaluation is configured against <code>{{ gateway_base_url }}</code>.
+        Use “Evaluate through basis-gateway” above to submit this request to the
+        gateway. The console displays the gateway's response and does not
+        reinterpret it.
+      </p>
+    {% endif %}
+
+    {% if eval_requested %}
+      {% if eval_state == "invalid_input" %}
+        <p class="notice warn-notice">
+          Correct the form errors above before evaluating through the gateway.
+        </p>
+      {% elif eval_state == "not_configured" %}
+        <p class="notice warn-notice">
+          Gateway evaluation is not configured.
+          Set <code>GATEWAY_BASE_URL</code> and the required gateway credentials
+          to enable live gateway-backed simulation.
+        </p>
+      {% elif eval_state == "token_missing" %}
+        <p class="notice warn-notice">
+          Gateway evaluation requires a configured server-side bearer token.
+        </p>
+      {% elif eval_state == "result" and evaluation %}
+        <article class="gw-response">
+          <div class="record-head">
+            <h3>Gateway response</h3>
+            <span class="gw-status gw-{{ evaluation.status.value }}">{{ evaluation.status.value | replace("_", " ") }}</span>
+          </div>
+          <p class="muted">
+            Returned by <code>basis-gateway</code>. The console relays this
+            response as-is; it does not make or reinterpret the decision.
+          </p>
+          <dl class="kv">
+            {% if evaluation.http_status %}<dt>HTTP status</dt><dd class="mono">{{ evaluation.http_status }}</dd>{% endif %}
+            {% if evaluation.outcome %}<dt>Decision</dt><dd><span class="outcome {{ evaluation.outcome }}">{{ evaluation.outcome }}</span></dd>{% endif %}
+            {% if evaluation.reason %}<dt>Reason</dt><dd>{{ evaluation.reason }}</dd>{% endif %}
+            {% if evaluation.error_code %}<dt>Error</dt><dd>{{ evaluation.error_code }}{% if evaluation.error_message %} — {{ evaluation.error_message }}{% endif %}</dd>{% endif %}
+            {% if evaluation.policy_version %}<dt>Policy version</dt><dd class="mono">{{ evaluation.policy_version }}</dd>{% endif %}
+            {% if evaluation.correlation_id %}<dt>Correlation ID</dt><dd class="mono">{{ evaluation.correlation_id }}</dd>{% endif %}
+            {% if evaluation.detail %}<dt>Detail</dt><dd>{{ evaluation.detail }}</dd>{% endif %}
+          </dl>
+          {% if evaluation_json %}
+            <details class="raw-response">
+              <summary>Raw gateway JSON response</summary>
+              <pre class="json"><code>{{ evaluation_json }}</code></pre>
+            </details>
+          {% endif %}
+        </article>
+      {% endif %}
+    {% endif %}
+  </section>
 
   <section class="field-help">
     <h2>What each field means</h2>
@@ -103,13 +177,15 @@
   </section>
 
   <section class="boundary">
-    <h3>Where evaluation happens (future integration)</h3>
+    <h3>Where evaluation happens</h3>
     <p>
       Evaluation belongs to <code>basis-core</code>, reached only through
-      <code>basis-gateway</code>. A later phase will submit this request to the
-      gateway's authenticated evaluation endpoint and render the returned
-      decision. The console never evaluates the request itself and never calls
-      <code>basis-core</code> directly:
+      <code>basis-gateway</code>. In gateway-evaluation mode the console submits
+      this request to the gateway's authenticated <code>/v1/evaluate</code>
+      endpoint and displays the decision it returns. The gateway authenticates
+      the caller, derives the subject from the verified token, and assembles the
+      audit record. The console never evaluates the request itself and never
+      calls <code>basis-core</code> directly:
     </p>
     <p class="mono">Operator → basis-console → basis-gateway → basis-core</p>
   </section>

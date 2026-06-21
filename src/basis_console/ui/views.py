@@ -12,9 +12,12 @@ Rendering uses Jinja2 with templates and static assets served locally from this
 package, so the console has no CDN or internet dependency and works air-gapped.
 
 Boundary reminder: none of these views evaluate authorization, authenticate
-users, or contact basis-core. As of Phase 3 the simulator POST builds a preview
-of the request shape only — it performs no evaluation and makes no call to
-basis-gateway. Live evaluation through the gateway is a later phase.
+users, or contact basis-core. The simulator POST always builds a preview of the
+request shape (preview mode). As of Phase 4 it can also, when configured,
+forward the request to basis-gateway's /v1/evaluate and display the gateway's
+decision verbatim (gateway-evaluation mode) — the console never evaluates
+locally, never sends a subject (identity comes from the gateway's Bearer token),
+and never reinterprets the gateway's decision.
 """
 
 from __future__ import annotations
@@ -41,11 +44,21 @@ from basis_console.simulator import (
     build_simulation,
 )
 
-# Note explaining the Phase 3 boundary, surfaced on the simulator page.
+# Note explaining the preview-mode boundary, surfaced on the simulator page.
 SIMULATOR_NO_EVAL_NOTICE = (
-    "This simulator does not evaluate decisions. It validates your input and "
+    "Preview mode does not evaluate decisions. It validates your input and "
     "builds a preview of the request shape only. No allow/deny outcome is "
     "produced and no call is made to basis-gateway or basis-core."
+)
+
+# Note explaining the identity boundary for live gateway evaluation. The gateway
+# derives the subject from its verified Bearer token and rejects caller-supplied
+# subject fields, so the console must never present the form subject as identity.
+SIMULATOR_IDENTITY_NOTICE = (
+    "Live gateway evaluation sends only the action, resource, and context. The "
+    "gateway derives the subject identity from its verified Bearer token — the "
+    "subject fields above are preview-only and are not sent as identity. The "
+    "console does not evaluate the request; it only displays the gateway's response."
 )
 
 # Empty form values used to render the simulator before any input is submitted.
@@ -76,12 +89,17 @@ def _base_context(request: Request, active: str) -> dict[str, object]:
     return {"request": request, "nav": _NAV, "active": active}
 
 
-def _gateway_status(request: Request) -> GatewayStatusReport:
-    """Probe gateway connectivity for display. Never raises into the view."""
+def _gateway_client(request: Request) -> GatewayClient:
+    """Return the app's gateway client, or an unconfigured one as a fallback."""
     client: GatewayClient | None = getattr(request.app.state, "gateway_client", None)
     if client is None:
         client = GatewayClient(base_url=None)
-    return client.check_status()
+    return client
+
+
+def _gateway_status(request: Request) -> GatewayStatusReport:
+    """Probe gateway connectivity for display. Never raises into the view."""
+    return _gateway_client(request).check_status()
 
 
 @router.get("/", response_class=HTMLResponse, summary="Console home / status page")
@@ -104,9 +122,21 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx = _base_context(request, active="/simulate")
     ctx["notice"] = SAMPLE_DATA_NOTICE
     ctx["no_eval_notice"] = SIMULATOR_NO_EVAL_NOTICE
+    ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
     ctx["allowed_actions"] = ALLOWED_ACTIONS
     ctx["field_explanations"] = FIELD_EXPLANATIONS
     ctx["scenarios"] = sample_simulator_scenarios()
+    # Gateway-evaluation availability (no network call — config inspection only).
+    client = _gateway_client(request)
+    ctx["gateway_configured"] = client.configured
+    ctx["gateway_token_present"] = client.has_token
+    ctx["gateway_eval_enabled"] = client.evaluation_enabled
+    ctx["gateway_base_url"] = client.base_url
+    # Defaults for the evaluation section; POST may override.
+    ctx["eval_requested"] = False
+    ctx["eval_state"] = None
+    ctx["evaluation"] = None
+    ctx["evaluation_json"] = None
     return ctx
 
 
@@ -144,16 +174,22 @@ def simulate(request: Request, example: str | None = None) -> HTMLResponse:
     return templates.TemplateResponse(request, "simulate.html", ctx)
 
 
-@router.post("/simulate", response_class=HTMLResponse, summary="Build a normalized request preview")
+@router.post("/simulate", response_class=HTMLResponse, summary="Build a preview or evaluate")
 async def simulate_submit(request: Request) -> HTMLResponse:
-    """Validate submitted fields and render a normalized request preview.
+    """Handle the two simulator modes.
 
-    This intentionally does NOT contact the gateway and does NOT evaluate the
-    request. It only sanitizes input and renders the request shape as formatted
-    JSON, or user-friendly errors when input is invalid.
+    Preview mode (default): validate and sanitize input, render the normalized
+    request shape as JSON. Never contacts the gateway, never evaluates.
+
+    Gateway-evaluation mode (``mode=gateway``): after a valid preview, submit
+    the request to ``basis-gateway /v1/evaluate`` and display the gateway's
+    response verbatim. The console never evaluates locally, never sends a subject
+    (identity comes from the gateway's Bearer token), and never reinterprets the
+    decision. Available only when a base URL and Bearer token are configured.
     """
     body = await request.body()
     form = _parse_form_body(body)
+    mode = (form.get("mode") or "preview").strip().lower()
     result = build_simulation(form)
 
     ctx = _simulate_context(request)
@@ -163,6 +199,32 @@ async def simulate_submit(request: Request) -> HTMLResponse:
     ctx["preview_json"] = (
         json.dumps(result.preview, indent=2, sort_keys=False) if result.ok else None
     )
+
+    if mode == "gateway":
+        ctx["eval_requested"] = True
+        client = _gateway_client(request)
+        if not result.ok or result.preview is None:
+            # Do not call the gateway with invalid input; the form errors show.
+            ctx["eval_state"] = "invalid_input"
+        elif not client.configured:
+            ctx["eval_state"] = "not_configured"
+        elif not client.has_token:
+            ctx["eval_state"] = "token_missing"
+        else:
+            preview = result.preview
+            resource_id = str(preview["resource_id"]) if preview.get("resource_id") else None
+            context = preview.get("context") or {}
+            evaluation = client.evaluate(
+                action=str(preview["action"]),
+                resource_id=resource_id,
+                context=context,
+            )
+            ctx["eval_state"] = "result"
+            ctx["evaluation"] = evaluation
+            ctx["evaluation_json"] = (
+                json.dumps(evaluation.response_json, indent=2) if evaluation.response_json else None
+            )
+
     return templates.TemplateResponse(request, "simulate.html", ctx)
 
 
