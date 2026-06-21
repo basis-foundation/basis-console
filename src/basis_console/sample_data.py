@@ -90,6 +90,51 @@ def sample_decisions() -> list[dict[str, Any]]:
     ]
 
 
+def sample_simulator_scenarios() -> list[dict[str, Any]]:
+    """Illustrative simulator inputs operators can load into the form.
+
+    These are SAMPLE request *shapes* only. They carry no outcome: the console
+    does not evaluate decisions, so a scenario shows what an operator would
+    submit, never what the system would decide. The ``slug`` is a stable id used
+    to load a scenario into the form via a query parameter.
+    """
+    return [
+        {
+            "slug": "operator-read-ahu-temp",
+            "title": "Building operator reads AHU temperature",
+            "summary": "A routine read of a rooftop air-handler supply-air sensor.",
+            "subject_id": "operator-jane",
+            "subject_type": "user",
+            "action": "read",
+            "resource_id": "ahu:rooftop-1:supply-temp",
+            "resource_type": "sensor",
+            "context": "site=bldg-a",
+        },
+        {
+            "slug": "technician-write-setpoint",
+            "title": "Technician writes HVAC setpoint",
+            "summary": "A write to a zone setpoint, tagged as occurring in a maintenance window.",
+            "subject_id": "tech-mike",
+            "subject_type": "user",
+            "action": "write",
+            "resource_id": "hvac:zone-3:setpoint",
+            "resource_type": "actuator",
+            "context": "maintenance_window=true\nsite=bldg-a",
+        },
+        {
+            "slug": "vendor-restricted-device",
+            "title": "Vendor attempts access to a restricted device",
+            "summary": "A third-party service account targeting a restricted controller.",
+            "subject_id": "vendor-acme",
+            "subject_type": "service",
+            "action": "execute",
+            "resource_id": "device:restricted-controller",
+            "resource_type": "device",
+            "context": "vendor=acme\nticket=chg-1042",
+        },
+    ]
+
+
 def sample_audit_events() -> list[dict[str, Any]]:
     """Illustrative audit records. Read-only placeholder data.
 
