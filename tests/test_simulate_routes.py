@@ -7,7 +7,8 @@ from basis_console.gateway.client import GatewayClient
 _VALID_FORM = {
     "subject_id": "operator-jane",
     "subject_type": "user",
-    "action": "read",
+    "action_verb": "read",
+    "action_domain": "ahu",
     "resource_id": "hvac:zone-a",
     "resource_type": "sensor",
     "context": "site=bldg-a",
@@ -23,9 +24,12 @@ def test_simulate_get_renders_form(client):
         assert field in response.text.lower()
     # The no-evaluation boundary is stated.
     assert "does not evaluate decisions" in response.text
-    # All allowed actions are offered.
-    for action in ("read", "write", "execute", "browse", "subscribe"):
-        assert action in response.text
+    # All allowed verbs are offered.
+    for verb in ("read", "write", "execute", "browse", "subscribe"):
+        assert verb in response.text
+    # Starter domains are offered too.
+    for domain in ("ahu", "setpoint", "telemetry", "device"):
+        assert domain in response.text
 
 
 def test_valid_post_renders_normalized_preview(client):
@@ -36,10 +40,12 @@ def test_valid_post_renders_normalized_preview(client):
     assert "operator-jane" in response.text
     assert "hvac:zone-a" in response.text
     assert "site" in response.text
+    # The preview carries the composed action string, never a bare verb.
+    assert "read:ahu" in response.text
 
 
 def test_missing_required_fields_show_errors(client):
-    response = client.post("/simulate", data={"action": "read"})
+    response = client.post("/simulate", data={"action_verb": "read"})
     assert response.status_code == 200
     assert "Please correct the following" in response.text
     assert "required" in response.text.lower()
@@ -47,11 +53,19 @@ def test_missing_required_fields_show_errors(client):
     assert "Normalized request preview" not in response.text
 
 
-def test_invalid_action_shows_error(client):
-    bad = dict(_VALID_FORM, action="delete")
+def test_invalid_verb_shows_error(client):
+    bad = dict(_VALID_FORM, action_verb="delete")
     response = client.post("/simulate", data=bad)
     assert response.status_code == 200
-    assert "must be one of" in response.text
+    assert "verb must be one of" in response.text
+    assert "Normalized request preview" not in response.text
+
+
+def test_invalid_domain_shows_error(client):
+    bad = dict(_VALID_FORM, action_domain="nonsense")
+    response = client.post("/simulate", data=bad)
+    assert response.status_code == 200
+    assert "domain must be one of" in response.text
     assert "Normalized request preview" not in response.text
 
 

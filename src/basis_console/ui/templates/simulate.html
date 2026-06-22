@@ -34,13 +34,30 @@
     <input id="subject_type" name="subject_type" type="text" value="{{ values.subject_type }}"
            placeholder="e.g. user" autocomplete="off">
 
-    <label for="action">Action</label>
-    <select id="action" name="action">
-      <option value="" {% if not values.action %}selected{% endif %}>— choose an action —</option>
-      {% for act in allowed_actions %}
-        <option value="{{ act }}" {% if values.action == act %}selected{% endif %}>{{ act }}</option>
+    <label for="action_verb">Action verb</label>
+    <select id="action_verb" name="action_verb">
+      <option value="" {% if not values.action_verb %}selected{% endif %}>— choose a verb —</option>
+      {% for verb in action_verbs %}
+        <option value="{{ verb }}" {% if values.action_verb == verb %}selected{% endif %}>{{ verb }}</option>
       {% endfor %}
     </select>
+
+    <label for="action_domain">Action domain</label>
+    <select id="action_domain" name="action_domain">
+      <option value="" {% if not values.action_domain %}selected{% endif %}>— choose a domain —</option>
+      {% for domain in action_domains %}
+        <option value="{{ domain }}" {% if values.action_domain == domain %}selected{% endif %}>{{ domain }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="action_preview">Final action string</label>
+    <output id="action_preview" class="mono action-preview" for="action_verb action_domain"
+            aria-live="polite">{{ values.action or "—" }}</output>
+    <p class="muted">
+      Composed as <code>{verb}:{domain}</code> (e.g. <code>read:ahu</code>) to
+      match <code>basis-core</code>'s action naming. The console builds this
+      string; it is not the vocabulary authority.
+    </p>
 
     <label for="resource_id">Resource ID</label>
     <input id="resource_id" name="resource_id" type="text" value="{{ values.resource_id }}"
@@ -61,6 +78,27 @@
       {% endif %}
     </div>
   </form>
+
+  <script>
+    // Live, client-side composition of the final action string for legibility.
+    // This is display-only: the authoritative composition happens server-side in
+    // basis_console.vocabulary.compose_action, and the console is never the
+    // vocabulary authority. No network access — air-gap friendly.
+    (function () {
+      var verb = document.getElementById("action_verb");
+      var domain = document.getElementById("action_domain");
+      var out = document.getElementById("action_preview");
+      if (!verb || !domain || !out) return;
+      function update() {
+        out.textContent = (verb.value && domain.value)
+          ? verb.value + ":" + domain.value
+          : "—";
+      }
+      verb.addEventListener("change", update);
+      domain.addEventListener("change", update);
+      update();
+    })();
+  </script>
 
   {% if preview_json %}
     <section class="preview" aria-label="Normalized request preview">

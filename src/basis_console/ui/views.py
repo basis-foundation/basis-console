@@ -39,10 +39,10 @@ from basis_console.sample_data import (
     sample_simulator_scenarios,
 )
 from basis_console.simulator import (
-    ALLOWED_ACTIONS,
     FIELD_EXPLANATIONS,
     build_simulation,
 )
+from basis_console.vocabulary import ACTION_DOMAINS, ACTION_VERBS
 
 # Note explaining the preview-mode boundary, surfaced on the simulator page.
 SIMULATOR_NO_EVAL_NOTICE = (
@@ -62,9 +62,13 @@ SIMULATOR_IDENTITY_NOTICE = (
 )
 
 # Empty form values used to render the simulator before any input is submitted.
+# ``action`` is the composed (read-only) string; operators choose ``action_verb``
+# and ``action_domain`` and the console composes ``action`` from them.
 _EMPTY_VALUES = {
     "subject_id": "",
     "subject_type": "",
+    "action_verb": "",
+    "action_domain": "",
     "action": "",
     "resource_id": "",
     "resource_type": "",
@@ -123,7 +127,8 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["notice"] = SAMPLE_DATA_NOTICE
     ctx["no_eval_notice"] = SIMULATOR_NO_EVAL_NOTICE
     ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
-    ctx["allowed_actions"] = ALLOWED_ACTIONS
+    ctx["action_verbs"] = ACTION_VERBS
+    ctx["action_domains"] = ACTION_DOMAINS
     ctx["field_explanations"] = FIELD_EXPLANATIONS
     ctx["scenarios"] = sample_simulator_scenarios()
     # Gateway-evaluation availability (no network call — config inspection only).

@@ -97,6 +97,10 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
     does not evaluate decisions, so a scenario shows what an operator would
     submit, never what the system would decide. The ``slug`` is a stable id used
     to load a scenario into the form via a query parameter.
+
+    Each scenario carries a structured action (``action_verb`` + ``action_domain``)
+    plus the precomposed ``action`` string the simulator would build from them
+    (e.g. ``read:ahu``), which matches basis-core's ``{verb}:{domain}`` naming.
     """
     return [
         {
@@ -105,7 +109,9 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
             "summary": "A routine read of a rooftop air-handler supply-air sensor.",
             "subject_id": "operator-jane",
             "subject_type": "user",
-            "action": "read",
+            "action_verb": "read",
+            "action_domain": "ahu",
+            "action": "read:ahu",
             "resource_id": "ahu:rooftop-1:supply-temp",
             "resource_type": "sensor",
             "context": "site=bldg-a",
@@ -116,7 +122,9 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
             "summary": "A write to a zone setpoint, tagged as occurring in a maintenance window.",
             "subject_id": "tech-mike",
             "subject_type": "user",
-            "action": "write",
+            "action_verb": "write",
+            "action_domain": "setpoint",
+            "action": "write:setpoint",
             "resource_id": "hvac:zone-3:setpoint",
             "resource_type": "actuator",
             "context": "maintenance_window=true\nsite=bldg-a",
@@ -127,7 +135,9 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
             "summary": "A third-party service account targeting a restricted controller.",
             "subject_id": "vendor-acme",
             "subject_type": "service",
-            "action": "execute",
+            "action_verb": "execute",
+            "action_domain": "command",
+            "action": "execute:command",
             "resource_id": "device:restricted-controller",
             "resource_type": "device",
             "context": "vendor=acme\nticket=chg-1042",

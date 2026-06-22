@@ -22,7 +22,8 @@ TOKEN = "super-secret-token-abc123"
 _VALID_FORM = {
     "subject_id": "operator-jane",
     "subject_type": "user",
-    "action": "read",
+    "action_verb": "read",
+    "action_domain": "ahu",
     "resource_id": "hvac:zone-a",
     "resource_type": "sensor",
     "context": "site=bldg-a",
@@ -135,6 +136,34 @@ def test_successful_evaluation_displays_allow():
         assert "corr-success" in response.text
 
 
+def test_gateway_evaluation_sends_composed_action_not_bare_verb():
+    """The body sent to /v1/evaluate must carry the composed {verb}:{domain} action."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen["body"] = json.loads(request.content.decode("utf-8"))
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data=dict(_VALID_FORM, action_verb="write", action_domain="setpoint", mode="gateway"),
+        )
+        assert response.status_code == 200
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    # Composed action is sent; a bare verb is never sent.
+    assert body["action"] == "write:setpoint"
+    assert body["action"] != "write"
+    assert ":" in body["action"]
+    # The identity boundary still holds: no subject is ever sent.
+    assert "subject_id" not in body
+    assert "subject_roles" not in body
+
+
 def test_denied_evaluation_is_shown_not_hidden():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -143,7 +172,10 @@ def test_denied_evaluation_is_shown_not_hidden():
         )
 
     with gateway_client_app(handler) as client:
-        response = client.post("/simulate", data=dict(_VALID_FORM, action="write", mode="gateway"))
+        response = client.post(
+            "/simulate",
+            data=dict(_VALID_FORM, action_verb="write", action_domain="setpoint", mode="gateway"),
+        )
         assert response.status_code == 200
         assert "Gateway response" in response.text
         assert "deny" in response.text

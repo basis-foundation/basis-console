@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–4)
+# basis-console — Architecture Notes (Phases 1–6)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -200,20 +200,103 @@ whether evaluation is enabled, never the token value.
 
 ### Architectural concerns discovered
 
-- **Action vocabulary mismatch.** The simulator's preview accepts the five
-  normalized verbs (`read` / `write` / `execute` / `browse` / `subscribe`), but
-  `basis-core`'s `DecisionRequest.action` requires the
+- **Action vocabulary mismatch.** *(Resolved in Phase 6 — see "Phase 6 action
+  vocabulary contract" below.)* The Phase 3–5 simulator accepted the five
+  normalized verbs (`read` / `write` / `execute` / `browse` / `subscribe`) as a
+  *bare* action, but `basis-core`'s `DecisionRequest.action` requires the
   `{verb}:{domain}[:{object}]` form (e.g. `read:sensor:telemetry`). A bare verb
-  sent to `/v1/evaluate` therefore returns a gateway `validation_failed` (400),
-  which the console displays correctly. A future phase may align the simulator's
-  action input with the gateway's action naming (e.g. richer action entry) so the
-  success path is reachable with operator-entered actions. This is intentionally
-  *not* worked around in the console, which would mean inventing/normalizing
-  semantics it does not own.
+  sent to `/v1/evaluate` therefore returned a gateway `validation_failed` (400),
+  which the console displayed correctly. Phase 6 aligns the simulator with the
+  gateway's action naming by composing a `{verb}:{domain}` string, so the
+  success path is reachable with operator-entered actions — without the console
+  inventing or owning vocabulary semantics it should not own.
 - **No gateway-minted dev token.** `basis-gateway` verifies tokens against a
   real OIDC issuer (JWKS); it provides no built-in dev/static token. Operators
   must obtain a token out-of-band. The console correctly treats the token as
   externally supplied configuration.
+
+## Phase 6 action vocabulary contract
+
+Phase 6 addresses the **action vocabulary mismatch** recorded above. It does not
+create `basis-schemas`; its goal is narrower: make `basis-console` construct
+gateway-compatible action strings transparently, and document the vocabulary
+contract that should eventually move into `basis-schemas`.
+
+### The mismatch (found in Phase 4/5)
+
+`basis-core` enforces that every `DecisionRequest.action` matches
+`{verb}:{domain}[:{object}]` — concretely, two or more colon-separated lowercase
+segments (`basis_core.decisions.models._ACTION_RE`). The governance rules for
+this naming live in
+`basis-architecture/docs/architecture/action-vocabulary.md`. The Phase 3–5
+simulator submitted a single bare verb (`read`) as the action, so every
+gateway-backed simulation of a simulator-generated request returned HTTP 400
+`validation_failed`. The console was the only component emitting bare verbs;
+adapters already emit fully-qualified actions.
+
+### What Phase 6 changes
+
+The simulator replaces the single bare-action input with **structured action
+construction**: an operator chooses an **action verb** and an **action domain**,
+and the console composes the final action string (`{verb}:{domain}`, e.g.
+`read:ahu`). The form surfaces the verb, the domain, the composed string, the
+normalized request preview, and the gateway response when evaluated. Both preview
+mode and gateway-evaluation mode use the composed string, so the simulator no
+longer produces a bare action for gateway evaluation.
+
+### The temporary local vocabulary bridge
+
+`src/basis_console/vocabulary.py` is a **provisional, console-local mirror**: a
+short verb list (`read` / `write` / `execute` / `browse` / `subscribe`), a small
+starter-domain list (`ahu`, `setpoint`, `telemetry`, `device`, `schedule`,
+`command`), a `compose_action` helper, and a structural validator that mirrors
+`basis-core`'s action regex so a malformed composition is rejected before it
+could reach the gateway. The module documents in its own docstring that it is a
+temporary bridge, introduces no new verbs, and is **not** the canonical
+vocabulary authority.
+
+This respects the core architectural constraint: **the console may help users
+construct valid action strings, but it must not become the authority for the
+action vocabulary.** The authoritative home is
+`basis-architecture/docs/architecture/action-vocabulary.md` today, and should
+become `basis-schemas` in the future.
+
+### Open architectural question (verb-set divergence)
+
+The verb set mirrored here (`read` / `write` / `execute` / `browse` /
+`subscribe`) matches what `basis-adapters` normalizes to and what earlier console
+phases accepted. The governance document
+(`basis-architecture/docs/architecture/action-vocabulary.md`) currently lists a
+partially different controlled set — it uses `command` and `configure` (and
+reserves `audit` / `enroll` / `revoke`) rather than `execute` / `browse`. The
+enforced `basis-core` regex constrains only the *shape* (≥2 lowercase segments),
+not the verb set, so both lists pass validation, but the divergence between the
+adapter-normalized verbs and the governance verb list is a real cross-component
+question. Phase 6 deliberately does **not** resolve it: reconciling the
+authoritative verb set is a vocabulary-authority decision the console does not
+own, and is exactly the kind of contract `basis-schemas` should settle.
+
+## Future `basis-schemas` extraction
+
+The Phase 6 vocabulary bridge is a stopgap. A dedicated **`basis-schemas`**
+package should eventually own the shared contracts that are presently mirrored or
+re-derived across repositories, so that no single component (least of all the
+console) is the de-facto authority:
+
+- the **action vocabulary** — verbs, domains, the `{verb}:{domain}[:{object}]`
+  structure, reserved prefixes/namespaces, and stability/deprecation rules;
+- the **request/response schemas** — `DecisionRequest` / `DecisionResponse` and
+  the gateway's `EvaluateRequest` / `EvaluateResponse`;
+- the **audit/event schemas** — the audit record shape and its action-vocabulary
+  version field;
+- the **cross-component compatibility contracts** that keep adapters, the
+  gateway, the kernel, and the console mutually consistent over time.
+
+When `basis-schemas` (or an equivalent shared contract package) lands,
+`basis_console.vocabulary` should be deleted and the simulator should import the
+shared definitions instead of maintaining a local copy. Until then, this
+document and `basis_console.vocabulary` record the assumptions the console is
+making and mark them explicitly as provisional.
 
 ## How the console reflects these boundaries
 
@@ -263,7 +346,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–4)
+## Endpoints (Phases 1–6)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |

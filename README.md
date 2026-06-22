@@ -2,7 +2,9 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 4**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, and an optional **gateway-backed simulation** path. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 6**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, and (new in Phase 6) **structured, gateway-compatible action construction**. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+
+Phase 6 fixes the action-vocabulary mismatch found during Phase 4/5 gateway-backed simulation: the simulator now composes a `{verb}:{domain}` action string (e.g. `read:ahu`) instead of submitting a bare verb (e.g. `read`) that `basis-core` rejects. The verb/domain lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
 ```
 basis-console is a human-facing operational interface.
@@ -81,11 +83,14 @@ This is the core boundary of Phase 3. Submitting the form **does not call `basis
 
 #### Validation rules (preview mode)
 
-- subject identifier, subject type, action, resource identifier, and resource type are required; context is optional;
-- the action must be one of `read`, `write`, `execute`, `browse`, `subscribe`;
+- subject identifier, subject type, action verb, action domain, resource identifier, and resource type are required; context is optional;
+- the action verb must be one of `read`, `write`, `execute`, `browse`, `subscribe`, and the action domain one of the provisional starter domains (`ahu`, `setpoint`, `telemetry`, `device`, `schedule`, `command`) — see Phase 6 below;
+- the composed action string (`{verb}:{domain}`) must match `basis-core`'s action format;
 - identifiers must be simple safe strings (letters, digits, and `. _ - : /`); types must be simple slugs;
 - context is one `key=value` per line; malformed, oversized, or duplicate entries are rejected;
 - invalid submissions re-render the form with user-friendly errors and the submitted values preserved.
+
+> Note: through Phase 5 the action was a single **bare verb** (`read`); Phase 6 replaces that with structured verb + domain composition so the simulator no longer produces gateway-invalid actions. See **Phase 6** below.
 
 **Phase 4 (gateway-backed simulation — this phase):**
 
@@ -107,7 +112,27 @@ The gateway verified the Bearer token derives subject identity **exclusively** f
 
 The client maps the gateway's documented HTTP contract to a typed result, distinguishing: success (200 ALLOW), denied (403 DENY/NOT_APPLICABLE — surfaced, never hidden), unauthorized (401), validation error (400), unavailable (503 or a network failure), and gateway error (500/other). Network and HTTP errors never raise into the UI.
 
-> Note: the gateway validates the action against `basis-core`'s `{verb}:{domain}[:{object}]` naming convention. The preview's single normalized verbs (e.g. `read`) are intentionally simpler, so live evaluation of a bare verb returns a gateway `validation_failed` (400) — which the console displays. See "Architectural concerns" in `docs/architecture.md`.
+> Note: the gateway validates the action against `basis-core`'s `{verb}:{domain}[:{object}]` naming convention. Through Phase 5 the simulator submitted a bare verb (e.g. `read`), which returned a gateway `validation_failed` (400). **Phase 6 resolves this** by composing a `{verb}:{domain}` action string, so normal simulator-generated requests now satisfy the gateway's action contract. See **Phase 6** below and `docs/architecture.md`.
+
+**Phase 6 (action vocabulary contract and schema preparation — this phase):**
+
+Phase 6 makes the simulator construct **gateway-compatible action strings** in a transparent, spec-driven way, and documents the vocabulary contract that should eventually move into a dedicated `basis-schemas` package.
+
+- **Why it exists.** During Phase 4/5 gateway-backed simulation, the simulator's bare verbs (`read`) failed `basis-core`'s `DecisionRequest.action` validation, which requires the `{verb}:{domain}[:{object}]` form (two or more colon-separated lowercase segments). Every gateway-backed simulation of a simulator-generated request therefore returned HTTP 400. This is the action-vocabulary mismatch Phase 6 addresses.
+- **Structured action construction.** The single bare-action input is replaced with an **action verb** and an **action domain**. The console composes them into a final action string (e.g. `read:ahu`, `write:setpoint`, `execute:command`) and shows the verb, the domain, the composed string, the normalized request preview, and — when evaluated — the gateway response. Both preview mode and gateway-evaluation mode use the composed string; no bare action is produced for gateway evaluation.
+- **Provisional vocabulary bridge.** `src/basis_console/vocabulary.py` defines the supported verbs (`read`, `write`, `execute`, `browse`, `subscribe`), a small set of starter domains (`ahu`, `setpoint`, `telemetry`, `device`, `schedule`, `command`), a composition helper, and a structural validator mirroring `basis-core`'s action regex. It is **explicitly a temporary, console-local mirror** and is documented as such in code; it is **not** the canonical vocabulary authority and introduces no new verbs.
+- **The console is not the vocabulary authority.** The console may help users construct valid action strings, but the authoritative source of the action vocabulary is `basis-architecture/docs/architecture/action-vocabulary.md` today and should become `basis-schemas` in the future.
+
+##### Future `basis-schemas` extraction
+
+The Phase 6 vocabulary bridge is a stopgap. A dedicated **`basis-schemas`** package should eventually own the cross-component contracts that are currently mirrored, re-derived, or implied across repositories:
+
+- the **action vocabulary** (verbs, domains, naming structure, reserved prefixes);
+- the **request/response schemas** (e.g. `DecisionRequest` / `DecisionResponse`, the gateway's `EvaluateRequest` / `EvaluateResponse`);
+- the **audit/event schemas**;
+- the **cross-component compatibility contracts** that keep adapters, the gateway, the kernel, and the console in agreement.
+
+When `basis-schemas` (or an equivalent shared contract package) exists, `basis_console.vocabulary` should be deleted and the simulator should consume the shared definitions instead of a local copy.
 
 Explicitly **out of scope** (later phases): OIDC login, user sessions, token refresh, browser-stored tokens, live policy / audit / decision viewers, adapter integration, deployment tooling (Docker, Kubernetes), metrics, multi-user sessions, and RBAC.
 
@@ -197,7 +222,8 @@ basis-console/
     config.py          # environment-driven configuration
     readiness.py       # readiness state tracker
     sample_data.py     # read-only SAMPLE data for placeholder views + scenarios
-    simulator.py       # decision-simulator validation + preview builder (Phase 3)
+    simulator.py       # decision-simulator validation + preview builder (Phases 3 + 6)
+    vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
     gateway/           # gateway client abstraction (Phases 2 + 4)
       client.py        #   httpx-based /health + /ready probe and /v1/evaluate call
       models.py        #   GatewayStatus + GatewayEvaluationStatus/Result types
