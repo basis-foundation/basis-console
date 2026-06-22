@@ -11,10 +11,20 @@ Boundary (Phase 3):
     ``basis-gateway``.
   - Nothing here contacts the gateway. Building a preview is a pure, local,
     in-memory transformation of validated input.
-  - The console does not import ``basis-core`` or any kernel model. The five
-    accepted actions are the normalized verbs that ``basis-adapters`` already
-    emits (read / write / execute / browse / subscribe); referencing that
-    vocabulary is not the same as inventing authorization semantics.
+  - The console does not import ``basis-core`` or any kernel model. The action
+    string is *composed* from a verb and a domain drawn from a provisional,
+    console-local vocabulary mirror (``basis_console.vocabulary``); referencing
+    that vocabulary is not the same as inventing or owning authorization
+    semantics. See that module and ``docs/architecture.md`` for why the console
+    is not the vocabulary authority.
+
+Action shape (Phase 6):
+  Earlier phases produced a *bare* verb (``read``) as the action, which the
+  gateway rejects because ``basis-core`` requires the
+  ``{verb}:{domain}[:{object}]`` form (two or more colon-separated lowercase
+  segments). The simulator now composes a gateway-compatible action string
+  (e.g. ``read:ahu``) from a chosen verb and domain so normal simulator output
+  validates against the kernel contract.
 
 The preview deliberately uses ``basis-core`` ``DecisionRequest`` field names
 (``subject_id``, ``action``, ``resource_id``, ``context``) so that the eventual
@@ -30,9 +40,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-# Normalized action verbs emitted by basis-adapters. The console accepts exactly
-# this set; it does not define new verbs or attach meaning to them.
-ALLOWED_ACTIONS: tuple[str, ...] = ("read", "write", "execute", "browse", "subscribe")
+from basis_console.vocabulary import (
+    ACTION_DOMAINS,
+    ACTION_VERBS,
+    compose_action,
+    is_supported_domain,
+    is_supported_verb,
+    matches_action_format,
+)
 
 # Defensive length bound so a preview cannot be ballooned with pathological input.
 MAX_FIELD_LEN = 128
@@ -64,10 +79,22 @@ FIELD_EXPLANATIONS: tuple[tuple[str, str], ...] = (
         "a subject attribute; the gateway resolves real identity and roles.",
     ),
     (
+        "action_verb",
+        "The operation the subject wants to perform. One of: "
+        + ", ".join(ACTION_VERBS)
+        + ". Combined with the domain to form the action string.",
+    ),
+    (
+        "action_domain",
+        "The functional domain or object the action targets (e.g. "
+        + ", ".join(ACTION_DOMAINS)
+        + "). Combined with the verb to form the action string.",
+    ),
+    (
         "action",
-        "The normalized verb the subject wants to perform. One of: "
-        + ", ".join(ALLOWED_ACTIONS)
-        + ". These are the verbs basis-adapters emits.",
+        "The composed action string sent to the gateway, in basis-core's "
+        "{verb}:{domain} form (e.g. read:ahu). The console builds this from the "
+        "verb and domain; it is not the vocabulary authority.",
     ),
     (
         "resource_id",
@@ -187,15 +214,25 @@ def build_simulation(raw: dict[str, str]) -> SimulationResult:
     """
     subject_id = (raw.get("subject_id") or "").strip()
     subject_type = (raw.get("subject_type") or "").strip()
-    action = (raw.get("action") or "").strip()
+    action_verb = (raw.get("action_verb") or "").strip()
+    action_domain = (raw.get("action_domain") or "").strip()
     resource_id = (raw.get("resource_id") or "").strip()
     resource_type = (raw.get("resource_type") or "").strip()
     context_raw = raw.get("context") or ""
 
+    # Best-effort composed string for echo/display. Only meaningful (and only
+    # rendered) once both segments are present; never sent to the gateway unless
+    # validation below passes.
+    composed_action = (
+        compose_action(action_verb, action_domain) if action_verb and action_domain else ""
+    )
+
     values = {
         "subject_id": subject_id,
         "subject_type": subject_type,
-        "action": action,
+        "action_verb": action_verb,
+        "action_domain": action_domain,
+        "action": composed_action,
         "resource_id": resource_id,
         "resource_type": resource_type,
         "context": context_raw,
@@ -207,14 +244,26 @@ def build_simulation(raw: dict[str, str]) -> SimulationResult:
     _validate_id("subject_id", subject_id, errors, field_errors)
     _validate_slug("subject_type", subject_type, errors, field_errors)
 
-    if not action:
-        msg = "Action is required."
+    # Action is composed from a verb and a domain. Both must come from the
+    # provisional console-local vocabulary; the console never accepts a free-form
+    # or bare action and never invents verbs/domains of its own.
+    if not action_verb:
+        msg = "Action verb is required."
         errors.append(msg)
-        field_errors["action"] = msg
-    elif action not in ALLOWED_ACTIONS:
-        msg = f"Action must be one of: {', '.join(ALLOWED_ACTIONS)}."
+        field_errors["action_verb"] = msg
+    elif not is_supported_verb(action_verb):
+        msg = f"Action verb must be one of: {', '.join(ACTION_VERBS)}."
         errors.append(msg)
-        field_errors["action"] = msg
+        field_errors["action_verb"] = msg
+
+    if not action_domain:
+        msg = "Action domain is required."
+        errors.append(msg)
+        field_errors["action_domain"] = msg
+    elif not is_supported_domain(action_domain):
+        msg = f"Action domain must be one of: {', '.join(ACTION_DOMAINS)}."
+        errors.append(msg)
+        field_errors["action_domain"] = msg
 
     _validate_id("resource_id", resource_id, errors, field_errors)
     _validate_slug("resource_type", resource_type, errors, field_errors)
@@ -223,6 +272,18 @@ def build_simulation(raw: dict[str, str]) -> SimulationResult:
     if ctx_errors:
         errors.extend(ctx_errors)
         field_errors.setdefault("context", ctx_errors[0])
+
+    # Defense in depth: even with valid verb + domain, refuse to emit a string
+    # that does not match basis-core's {verb}:{domain}[:{object}] shape. This
+    # should never fire for vocabulary-sourced inputs; it guards against a future
+    # vocabulary edit that would silently produce a gateway-invalid action.
+    if action_verb and action_domain and not matches_action_format(composed_action):
+        msg = (
+            f"Composed action {composed_action!r} does not match the required "
+            "{verb}:{domain} format."
+        )
+        errors.append(msg)
+        field_errors.setdefault("action_verb", msg)
 
     if errors:
         return SimulationResult(
@@ -236,7 +297,7 @@ def build_simulation(raw: dict[str, str]) -> SimulationResult:
     preview: dict[str, Any] = {
         "subject_id": subject_id,
         "subject_type": subject_type,
-        "action": action,
+        "action": composed_action,
         "resource_id": resource_id,
         "resource_type": resource_type,
         "context": context,
