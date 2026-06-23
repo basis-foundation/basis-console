@@ -42,7 +42,7 @@ from basis_console.simulator import (
     FIELD_EXPLANATIONS,
     build_simulation,
 )
-from basis_console.vocabulary import ACTION_DOMAINS, ACTION_VERBS
+from basis_console.vocabulary import ACTION_VERBS, RESOURCE_TYPES
 
 # Note explaining the preview-mode boundary, surfaced on the simulator page.
 SIMULATOR_NO_EVAL_NOTICE = (
@@ -55,24 +55,26 @@ SIMULATOR_NO_EVAL_NOTICE = (
 # derives the subject from its verified Bearer token and rejects caller-supplied
 # subject fields, so the console must never present the form subject as identity.
 SIMULATOR_IDENTITY_NOTICE = (
-    "Live gateway evaluation sends only the action, resource, and context. The "
-    "gateway derives the subject identity from its verified Bearer token — the "
-    "subject fields above are preview-only and are not sent as identity. The "
-    "console does not evaluate the request; it only displays the gateway's response."
+    "Live gateway evaluation sends only the action verb, resource type, resource "
+    "ID, and context. The gateway derives the subject identity from its verified "
+    "Bearer token — the subject fields above are preview-only and are not sent as "
+    "identity. The gateway composes the canonical action and resource id; the "
+    "console does not evaluate the request, it only displays the gateway's response."
 )
 
 # Empty form values used to render the simulator before any input is submitted.
-# ``action`` is the composed (read-only) string; operators choose ``action_verb``
-# and ``action_domain`` and the console composes ``action`` from them.
+# Operators choose a bare ``action_verb`` and a ``resource_type`` and supply a
+# *local* ``resource_id``; the gateway composes the canonical action and resource
+# id. ``composed_action`` / ``composed_resource_id`` are preview mirrors only.
 _EMPTY_VALUES = {
     "subject_id": "",
     "subject_type": "",
     "action_verb": "",
-    "action_domain": "",
-    "action": "",
-    "resource_id": "",
     "resource_type": "",
+    "resource_id": "",
     "context": "",
+    "composed_action": "",
+    "composed_resource_id": "",
 }
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -128,7 +130,7 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["no_eval_notice"] = SIMULATOR_NO_EVAL_NOTICE
     ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
     ctx["action_verbs"] = ACTION_VERBS
-    ctx["action_domains"] = ACTION_DOMAINS
+    ctx["resource_types"] = RESOURCE_TYPES
     ctx["field_explanations"] = FIELD_EXPLANATIONS
     ctx["scenarios"] = sample_simulator_scenarios()
     # Gateway-evaluation availability (no network call — config inspection only).
@@ -137,10 +139,13 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["gateway_token_present"] = client.has_token
     ctx["gateway_eval_enabled"] = client.evaluation_enabled
     ctx["gateway_base_url"] = client.base_url
-    # Defaults for the evaluation section; POST may override.
+    # Defaults for the preview / evaluation sections; POST may override.
+    ctx["gateway_body_json"] = None
+    ctx["composition"] = None
     ctx["eval_requested"] = False
     ctx["eval_state"] = None
     ctx["evaluation"] = None
+    ctx["evaluation_evidence"] = {}
     ctx["evaluation_json"] = None
     return ctx
 
@@ -204,11 +209,20 @@ async def simulate_submit(request: Request) -> HTMLResponse:
     ctx["preview_json"] = (
         json.dumps(result.preview, indent=2, sort_keys=False) if result.ok else None
     )
+    # The exact normalized body the console submits, and a preview of what the
+    # gateway will compose from it. Both are display aids; the gateway owns
+    # composition.
+    ctx["gateway_body_json"] = (
+        json.dumps(result.gateway_body, indent=2, sort_keys=False)
+        if result.ok and result.gateway_body
+        else None
+    )
+    ctx["composition"] = result.composition if result.ok else None
 
     if mode == "gateway":
         ctx["eval_requested"] = True
         client = _gateway_client(request)
-        if not result.ok or result.preview is None:
+        if not result.ok or result.gateway_body is None:
             # Do not call the gateway with invalid input; the form errors show.
             ctx["eval_state"] = "invalid_input"
         elif not client.configured:
@@ -216,16 +230,19 @@ async def simulate_submit(request: Request) -> HTMLResponse:
         elif not client.has_token:
             ctx["eval_state"] = "token_missing"
         else:
-            preview = result.preview
-            resource_id = str(preview["resource_id"]) if preview.get("resource_id") else None
-            context = preview.get("context") or {}
+            gw = result.gateway_body
+            resource_type = str(gw["resource_type"]) if gw.get("resource_type") else None
+            resource_id = str(gw["resource_id"]) if gw.get("resource_id") else None
+            context = gw.get("context") or {}
             evaluation = client.evaluate(
-                action=str(preview["action"]),
+                action=str(gw["action"]),
+                resource_type=resource_type,
                 resource_id=resource_id,
                 context=context,
             )
             ctx["eval_state"] = "result"
             ctx["evaluation"] = evaluation
+            ctx["evaluation_evidence"] = evaluation.composition_evidence
             ctx["evaluation_json"] = (
                 json.dumps(evaluation.response_json, indent=2) if evaluation.response_json else None
             )

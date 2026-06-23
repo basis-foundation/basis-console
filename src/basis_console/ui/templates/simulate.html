@@ -3,11 +3,14 @@
 {% block content %}
   <h1>Decision Simulator</h1>
   <p class="lead">
-    Construct a realistic authorization request — a subject, an action, and a
-    resource — and preview the normalized request shape. When configured, you can
-    optionally submit it to <code>basis-gateway</code> for a live decision. This
-    is an educational, operator-facing builder, not an enforcement path: the
-    console never decides — it only previews requests and displays gateway responses.
+    Construct a realistic authorization request — a subject, an action verb, a
+    resource type, and a local resource ID — and preview the normalized request
+    shape. When configured, you can optionally submit it to
+    <code>basis-gateway</code> for a live decision. The gateway composes the
+    canonical action and resource identifier; the console only submits the
+    normalized request and displays the gateway's response. This is an
+    educational, operator-facing builder, not an enforcement path: the console
+    never decides.
   </p>
 
   <p class="notice warn-notice">{{ no_eval_notice }}</p>
@@ -42,30 +45,37 @@
       {% endfor %}
     </select>
 
-    <label for="action_domain">Action domain</label>
-    <select id="action_domain" name="action_domain">
-      <option value="" {% if not values.action_domain %}selected{% endif %}>— choose a domain —</option>
-      {% for domain in action_domains %}
-        <option value="{{ domain }}" {% if values.action_domain == domain %}selected{% endif %}>{{ domain }}</option>
+    <label for="resource_type">Resource type / action domain</label>
+    <select id="resource_type" name="resource_type">
+      <option value="" {% if not values.resource_type %}selected{% endif %}>— choose a resource type —</option>
+      {% for rtype in resource_types %}
+        <option value="{{ rtype }}" {% if values.resource_type == rtype %}selected{% endif %}>{{ rtype }}</option>
       {% endfor %}
     </select>
-
-    <label for="action_preview">Final action string</label>
-    <output id="action_preview" class="mono action-preview" for="action_verb action_domain"
-            aria-live="polite">{{ values.action or "—" }}</output>
     <p class="muted">
-      Composed as <code>{verb}:{domain}</code> (e.g. <code>read:ahu</code>) to
-      match <code>basis-core</code>'s action naming. The console builds this
-      string; it is not the vocabulary authority.
+      Not merely descriptive: the gateway uses the resource type to compose both
+      the action (<code>{verb}:{type}</code>) and the resource id
+      (<code>{type}:{id}</code>).
     </p>
 
-    <label for="resource_id">Resource ID</label>
+    <label for="resource_id">Resource ID (local)</label>
     <input id="resource_id" name="resource_id" type="text" value="{{ values.resource_id }}"
-           placeholder="e.g. hvac:zone-a" autocomplete="off">
+           placeholder="e.g. rooftop-1 (local, untyped)" autocomplete="off">
+    <p class="muted">
+      Enter the <em>local</em> resource id (e.g. <code>rooftop-1</code>), not an
+      already-typed id (e.g. <code>ahu:rooftop-1</code>). The gateway prefixes it
+      with the resource type. Leave blank for a domain-level request.
+    </p>
 
-    <label for="resource_type">Resource type</label>
-    <input id="resource_type" name="resource_type" type="text" value="{{ values.resource_type }}"
-           placeholder="e.g. actuator" autocomplete="off">
+    <label for="composition_preview">Gateway will compose</label>
+    <output id="composition_preview" class="mono action-preview"
+            for="action_verb resource_type resource_id" aria-live="polite">{% if values.composed_action %}{{ values.composed_action }}{% if values.composed_resource_id %} on {{ values.composed_resource_id }}{% endif %}{% else %}—{% endif %}</output>
+    <p class="muted">
+      Preview of the canonical action and resource id <code>basis-gateway</code>
+      derives from this normalized request. The console does not compose these —
+      it submits the bare verb, resource type, and local id, and the gateway
+      composes. It is not the vocabulary authority.
+    </p>
 
     <label for="context">Context</label>
     <textarea id="context" name="context" rows="3"
@@ -80,22 +90,32 @@
   </form>
 
   <script>
-    // Live, client-side composition of the final action string for legibility.
-    // This is display-only: the authoritative composition happens server-side in
-    // basis_console.vocabulary.compose_action, and the console is never the
-    // vocabulary authority. No network access — air-gap friendly.
+    // Live, client-side preview of what basis-gateway will compose, for
+    // legibility only. The authoritative composition happens at the gateway; the
+    // console submits the bare verb, resource type, and local resource id. No
+    // network access — air-gap friendly.
     (function () {
       var verb = document.getElementById("action_verb");
-      var domain = document.getElementById("action_domain");
-      var out = document.getElementById("action_preview");
-      if (!verb || !domain || !out) return;
+      var rtype = document.getElementById("resource_type");
+      var rid = document.getElementById("resource_id");
+      var out = document.getElementById("composition_preview");
+      if (!verb || !rtype || !rid || !out) return;
       function update() {
-        out.textContent = (verb.value && domain.value)
-          ? verb.value + ":" + domain.value
-          : "—";
+        if (!verb.value || !rtype.value) {
+          out.textContent = "—";
+          return;
+        }
+        var text = verb.value + ":" + rtype.value;
+        var local = (rid.value || "").trim();
+        // Only preview a composed resource id for a local (untyped) id.
+        if (local && local.indexOf(":") === -1) {
+          text += " on " + rtype.value + ":" + local;
+        }
+        out.textContent = text;
       }
       verb.addEventListener("change", update);
-      domain.addEventListener("change", update);
+      rtype.addEventListener("change", update);
+      rid.addEventListener("input", update);
       update();
     })();
   </script>
@@ -107,8 +127,35 @@
         This is the request shape only. The gateway and kernel populate
         enforcement-path fields (<code>request_id</code>, <code>timestamp</code>,
         resolved <code>subject_roles</code>) — the console does not fabricate them.
+        The subject fields are preview-only and are not sent.
       </p>
       <pre class="json"><code>{{ preview_json }}</code></pre>
+
+      {% if gateway_body_json %}
+        <h3>Body submitted to the gateway</h3>
+        <p class="muted">
+          The exact normalized JSON the console sends to
+          <code>/v1/evaluate</code> — a bare action verb, the resource type, the
+          local resource id, and context. No subject is sent.
+        </p>
+        <pre class="json"><code>{{ gateway_body_json }}</code></pre>
+      {% endif %}
+
+      {% if composition and composition.action %}
+        <h3>What the gateway will compose</h3>
+        <p class="muted">
+          Preview of the canonical identifiers <code>basis-gateway</code> derives.
+          The gateway owns this composition; the console does not.
+        </p>
+        <dl class="kv">
+          <dt>Composed action</dt><dd class="mono">{{ composition.action }}</dd>
+          {% if composition.resource_id %}
+            <dt>Composed resource id</dt><dd class="mono">{{ composition.resource_id }}</dd>
+          {% else %}
+            <dt>Composed resource id</dt><dd class="muted">none (domain-level request)</dd>
+          {% endif %}
+        </dl>
+      {% endif %}
     </section>
   {% endif %}
 
@@ -169,6 +216,20 @@
             {% if evaluation.correlation_id %}<dt>Correlation ID</dt><dd class="mono">{{ evaluation.correlation_id }}</dd>{% endif %}
             {% if evaluation.detail %}<dt>Detail</dt><dd>{{ evaluation.detail }}</dd>{% endif %}
           </dl>
+          {% if evaluation_evidence %}
+            <div class="gw-composition">
+              <h4>Gateway composition</h4>
+              <p class="muted">
+                Composition evidence the gateway recorded while deriving the
+                canonical action / resource id from the normalized request.
+              </p>
+              <dl class="kv">
+                {% for key, value in evaluation_evidence.items() %}
+                  <dt class="mono">{{ key }}</dt><dd class="mono">{{ value }}</dd>
+                {% endfor %}
+              </dl>
+            </div>
+          {% endif %}
           {% if evaluation_json %}
             <details class="raw-response">
               <summary>Raw gateway JSON response</summary>
@@ -206,8 +267,9 @@
         <p class="record-desc">{{ s.summary }}</p>
         <dl class="kv">
           <dt>Subject</dt><dd>{{ s.subject_id }} (<code>{{ s.subject_type }}</code>)</dd>
-          <dt>Action</dt><dd><code>{{ s.action }}</code></dd>
-          <dt>Resource</dt><dd><code>{{ s.resource_id }}</code> (<code>{{ s.resource_type }}</code>)</dd>
+          <dt>Verb / resource type</dt><dd><code>{{ s.action_verb }}</code> / <code>{{ s.resource_type }}</code></dd>
+          <dt>Local resource ID</dt><dd><code>{{ s.resource_id }}</code></dd>
+          <dt>Gateway composes</dt><dd><code>{{ s.composed_action }}</code> on <code>{{ s.composed_resource_id }}</code></dd>
         </dl>
       </article>
     {% endfor %}

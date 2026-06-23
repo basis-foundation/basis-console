@@ -10,11 +10,19 @@ It does two things, both strictly through the gateway's HTTP surface:
     relays the gateway's decision verbatim (Phase 4). The console never evaluates
     locally, never imports ``basis-core``, and never reinterprets the decision.
 
+Gateway-owned composition: the gateway is the action/resource composition
+boundary. ``evaluate()`` submits a *normalized* request — a bare ``action`` verb
+plus a ``resource_type`` and a *local* ``resource_id`` — and the gateway composes
+the canonical kernel action (``{verb}:{resource_type}``) and the typed resource
+id (``{resource_type}:{local_id}``). A fully-typed (direct) request omits
+``resource_type``. The console never composes those canonical strings itself.
+
 Identity boundary: the gateway derives subject identity exclusively from the
 verified Bearer token and rejects caller-supplied subject fields. ``evaluate()``
-therefore sends only ``action`` / ``resource_id`` / ``context`` and never a
-subject. The configured Bearer token is sent only as the ``Authorization``
-header; it is never logged, returned, or stored on any result object.
+therefore sends only ``action`` / ``resource_type`` / ``resource_id`` /
+``context`` and never a subject. The configured Bearer token is sent only as the
+``Authorization`` header; it is never logged, returned, or stored on any result
+object.
 """
 
 from __future__ import annotations
@@ -159,15 +167,19 @@ class GatewayClient:
         self,
         *,
         action: str,
+        resource_type: str | None = None,
         resource_id: str | None = None,
         context: dict[str, str] | None = None,
     ) -> GatewayEvaluationResult:
         """Submit an authorization request to ``POST /v1/evaluate``. Never raises.
 
-        Only ``action`` / ``resource_id`` / ``context`` are sent — never a
-        subject, because the gateway derives identity from the Bearer token. The
-        gateway's decision is relayed verbatim; this method does not reinterpret
-        an ALLOW/DENY result, it only classifies the HTTP response for display.
+        Only ``action`` / ``resource_type`` / ``resource_id`` / ``context`` are
+        sent — never a subject, because the gateway derives identity from the
+        Bearer token. In the normalized shape the gateway composes the canonical
+        action and resource id from ``resource_type``; a direct (fully-typed)
+        request omits ``resource_type``. The gateway's decision is relayed
+        verbatim; this method does not reinterpret an ALLOW/DENY result, it only
+        classifies the HTTP response for display.
         """
         if self._base_url is None:
             return GatewayEvaluationResult(status=GatewayEvaluationStatus.NOT_CONFIGURED)
@@ -175,6 +187,8 @@ class GatewayClient:
             return GatewayEvaluationResult(status=GatewayEvaluationStatus.TOKEN_MISSING)
 
         body: dict[str, Any] = {"action": action}
+        if resource_type:
+            body["resource_type"] = resource_type
         if resource_id:
             body["resource_id"] = resource_id
         if context:

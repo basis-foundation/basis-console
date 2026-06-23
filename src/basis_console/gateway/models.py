@@ -9,6 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
+
+# Prefix the gateway uses for the composition evidence it records when it composes
+# a canonical action / resource id from a normalized request. The console only
+# *reads* these keys for display; it never sets them (the gateway rejects
+# caller-supplied ``basis_gateway.*`` keys).
+GATEWAY_EVIDENCE_PREFIX = "basis_gateway."
 
 
 class GatewayStatus(str, Enum):
@@ -141,3 +148,32 @@ class GatewayEvaluationResult:
             GatewayEvaluationStatus.NOT_CONFIGURED,
             GatewayEvaluationStatus.TOKEN_MISSING,
         )
+
+    @property
+    def composition_evidence(self) -> dict[str, object]:
+        """Any ``basis_gateway.*`` composition evidence found in the response.
+
+        When the gateway composes a canonical action / resource id from a
+        normalized request it records evidence under keys prefixed with
+        ``basis_gateway.`` (e.g. ``basis_gateway.composed_resource_id``). The
+        gateway may surface these at the top level of the response body or nested
+        under a ``context`` / ``evidence`` object; this scans both and returns the
+        flattened mapping for display. Empty when no such evidence is present —
+        the console never fabricates composition evidence.
+        """
+        if not self.response_json:
+            return {}
+
+        found: dict[str, object] = {}
+
+        def _collect(obj: Any) -> None:
+            if not isinstance(obj, dict):
+                return
+            for key, value in obj.items():
+                if isinstance(key, str) and key.startswith(GATEWAY_EVIDENCE_PREFIX):
+                    found[key] = value
+
+        _collect(self.response_json)
+        for nested_key in ("context", "evidence"):
+            _collect(self.response_json.get(nested_key))
+        return found
