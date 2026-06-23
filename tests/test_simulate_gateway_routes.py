@@ -1,7 +1,13 @@
-"""Route tests for Phase 4 gateway-backed simulation (mocked HTTP)."""
+"""Route tests for gateway-backed simulation (mocked HTTP).
+
+These exercise the alignment with gateway-owned composition: the console submits
+a *normalized* request (bare verb + resource_type + local resource_id) and the
+gateway composes the canonical action and resource id.
+"""
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -19,13 +25,13 @@ Handler = Callable[[httpx.Request], httpx.Response]
 GATEWAY_URL = "http://gateway.test:8000"
 TOKEN = "super-secret-token-abc123"
 
+# Normalized form: bare verb + resource_type (domain) + LOCAL resource id.
 _VALID_FORM = {
     "subject_id": "operator-jane",
     "subject_type": "user",
     "action_verb": "read",
-    "action_domain": "ahu",
-    "resource_id": "hvac:zone-a",
-    "resource_type": "sensor",
+    "resource_type": "ahu",
+    "resource_id": "rooftop-1",
     "context": "site=bldg-a",
 }
 
@@ -37,11 +43,7 @@ def gateway_client_app(
     base_url: str | None = GATEWAY_URL,
     token: str | None = TOKEN,
 ) -> Iterator[TestClient]:
-    """A TestClient whose gateway client is overridden after startup.
-
-    Lifespan builds a default client from env; we replace it so evaluate() uses a
-    MockTransport and a known base URL / token without touching the network.
-    """
+    """A TestClient whose gateway client is overridden after startup."""
     reset_readiness_state()
     app = create_app()
     with TestClient(app) as client:
@@ -72,7 +74,6 @@ def _allow_handler(request: httpx.Request) -> httpx.Response:
 
 
 def test_preview_mode_works_without_gateway(client):
-    """The default fixture has no gateway configured; preview must still work."""
     response = client.post("/simulate", data=dict(_VALID_FORM, mode="preview"))
     assert response.status_code == 200
     assert "Normalized request preview" in response.text
@@ -91,7 +92,6 @@ def test_preview_mode_default_when_mode_absent(client):
 
 
 def test_eval_disabled_when_base_url_unset(client):
-    """No GATEWAY_BASE_URL → not-configured message and no evaluate button."""
     response = client.get("/simulate")
     assert response.status_code == 200
     assert "Gateway evaluation is not configured" in response.text
@@ -103,7 +103,6 @@ def test_eval_requires_token_when_base_url_set_but_no_token():
         response = client.get("/simulate")
         assert response.status_code == 200
         assert "requires a configured server-side bearer token" in response.text
-        # Without a token, the evaluate button is not offered.
         assert "Evaluate through basis-gateway" not in response.text
 
 
@@ -136,32 +135,70 @@ def test_successful_evaluation_displays_allow():
         assert "corr-success" in response.text
 
 
-def test_gateway_evaluation_sends_composed_action_not_bare_verb():
-    """The body sent to /v1/evaluate must carry the composed {verb}:{domain} action."""
+def test_gateway_evaluation_sends_normalized_request_not_composed():
+    """The body sent to /v1/evaluate is the normalized shape — the gateway composes.
+
+    The console submits a BARE verb plus resource_type and a LOCAL resource_id; it
+    must NOT pre-compose the {verb}:{domain} action or the typed resource id.
+    """
     seen: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        import json
-
         seen["body"] = json.loads(request.content.decode("utf-8"))
         return _allow_handler(request)
 
     with gateway_client_app(handler) as client:
         response = client.post(
             "/simulate",
-            data=dict(_VALID_FORM, action_verb="write", action_domain="setpoint", mode="gateway"),
+            data=dict(
+                _VALID_FORM,
+                action_verb="write",
+                resource_type="setpoint",
+                resource_id="zone-3",
+                mode="gateway",
+            ),
         )
         assert response.status_code == 200
 
     body = seen["body"]
     assert isinstance(body, dict)
-    # Composed action is sent; a bare verb is never sent.
-    assert body["action"] == "write:setpoint"
-    assert body["action"] != "write"
-    assert ":" in body["action"]
+    # Normalized: bare verb, resource_type, LOCAL resource id.
+    assert body["action"] == "write"
+    assert ":" not in body["action"]
+    assert body["resource_type"] == "setpoint"
+    assert body["resource_id"] == "zone-3"
+    assert ":" not in body["resource_id"]
     # The identity boundary still holds: no subject is ever sent.
     assert "subject_id" not in body
     assert "subject_roles" not in body
+    assert "subject_type" not in body
+
+
+def test_gateway_composition_evidence_is_displayed():
+    """When the gateway returns composition evidence, the console shows it."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "request_id": "req-1",
+                "outcome": "allow",
+                "reason": "ok",
+                "context": {
+                    "basis_gateway.resource_composed": True,
+                    "basis_gateway.original_resource_id": "rooftop-1",
+                    "basis_gateway.resource_type": "ahu",
+                    "basis_gateway.composed_resource_id": "ahu:rooftop-1",
+                },
+            },
+        )
+
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data=dict(_VALID_FORM, mode="gateway"))
+        assert response.status_code == 200
+        assert "Gateway composition" in response.text
+        assert "basis_gateway.composed_resource_id" in response.text
+        assert "ahu:rooftop-1" in response.text
 
 
 def test_denied_evaluation_is_shown_not_hidden():
@@ -174,7 +211,13 @@ def test_denied_evaluation_is_shown_not_hidden():
     with gateway_client_app(handler) as client:
         response = client.post(
             "/simulate",
-            data=dict(_VALID_FORM, action_verb="write", action_domain="setpoint", mode="gateway"),
+            data=dict(
+                _VALID_FORM,
+                action_verb="write",
+                resource_type="setpoint",
+                resource_id="zone-3",
+                mode="gateway",
+            ),
         )
         assert response.status_code == 200
         assert "Gateway response" in response.text
@@ -226,7 +269,7 @@ def test_invalid_input_does_not_call_gateway():
 
     with gateway_client_app(handler) as client:
         # Missing required fields → invalid; gateway must not be called.
-        response = client.post("/simulate", data={"action": "read", "mode": "gateway"})
+        response = client.post("/simulate", data={"action_verb": "read", "mode": "gateway"})
         assert response.status_code == 200
         assert "Please correct the following" in response.text
         assert calls == []
@@ -240,15 +283,12 @@ def test_invalid_input_does_not_call_gateway():
 
 def test_bearer_token_never_rendered_in_html():
     with gateway_client_app(_allow_handler) as client:
-        # On the form page.
         assert TOKEN not in client.get("/simulate").text
-        # And on a rendered gateway response.
         response = client.post("/simulate", data=dict(_VALID_FORM, mode="gateway"))
         assert TOKEN not in response.text
 
 
 def test_console_does_not_import_basis_core():
-    """The console must never depend on or import basis-core."""
     with gateway_client_app(_allow_handler) as client:
         client.post("/simulate", data=dict(_VALID_FORM, mode="gateway"))
     assert "basis_core" not in sys.modules

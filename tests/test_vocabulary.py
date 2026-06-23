@@ -1,15 +1,17 @@
-"""Unit tests for the provisional console-local action vocabulary (Phase 6)."""
+"""Unit tests for the provisional console-local vocabulary bridge (Phases 6–7)."""
 
 from __future__ import annotations
 
 import re
 
 from basis_console.vocabulary import (
-    ACTION_DOMAINS,
     ACTION_VERBS,
+    RESOURCE_TYPES,
     compose_action,
-    is_supported_domain,
+    compose_resource_id,
+    is_supported_resource_type,
     is_supported_verb,
+    is_typed_identifier,
     matches_action_format,
 )
 
@@ -20,8 +22,8 @@ def test_verbs_are_the_established_basis_set():
     assert ACTION_VERBS == ("read", "write", "execute", "browse", "subscribe")
 
 
-def test_domains_are_conservative_starter_set():
-    assert set(ACTION_DOMAINS) == {
+def test_resource_types_are_conservative_starter_set():
+    assert set(RESOURCE_TYPES) == {
         "ahu",
         "setpoint",
         "telemetry",
@@ -31,21 +33,33 @@ def test_domains_are_conservative_starter_set():
     }
 
 
-def test_compose_action_builds_two_segment_string():
+def test_compose_action_previews_two_segment_string():
     assert compose_action("read", "ahu") == "read:ahu"
     assert compose_action("write", "setpoint") == "write:setpoint"
 
 
+def test_compose_resource_id_previews_typed_identifier():
+    assert compose_resource_id("ahu", "rooftop-1") == "ahu:rooftop-1"
+    assert compose_resource_id("setpoint", "zone-3") == "setpoint:zone-3"
+
+
 def test_compose_action_output_matches_core_format():
     for verb in ACTION_VERBS:
-        for domain in ACTION_DOMAINS:
-            assert matches_action_format(compose_action(verb, domain))
+        for rtype in RESOURCE_TYPES:
+            assert matches_action_format(compose_action(verb, rtype))
 
 
 def test_bare_verb_does_not_match_core_format():
-    # The whole point of Phase 6: a bare verb is NOT a valid action.
+    # A bare verb is NOT a valid kernel action.
     for verb in ACTION_VERBS:
         assert not matches_action_format(verb)
+
+
+def test_is_typed_identifier_detects_colon():
+    assert is_typed_identifier("ahu:rooftop-1")
+    assert is_typed_identifier("read:ahu")
+    assert not is_typed_identifier("rooftop-1")
+    assert not is_typed_identifier("read")
 
 
 def test_format_mirror_matches_basis_core_regex():
@@ -60,5 +74,5 @@ def test_format_mirror_matches_basis_core_regex():
 def test_support_helpers():
     assert is_supported_verb("read")
     assert not is_supported_verb("delete")
-    assert is_supported_domain("ahu")
-    assert not is_supported_domain("nonsense")
+    assert is_supported_resource_type("ahu")
+    assert not is_supported_resource_type("nonsense")

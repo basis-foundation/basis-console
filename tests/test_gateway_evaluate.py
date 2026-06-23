@@ -114,6 +114,36 @@ def test_omits_optional_fields_when_absent():
     assert seen["body"] == {"action": "read"}
 
 
+def test_sends_normalized_request_with_resource_type():
+    """The normalized shape carries a bare verb + resource_type + local id."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return _allow_response(request)
+
+    _client(handler).evaluate(action="read", resource_type="ahu", resource_id="rooftop-1")
+
+    body = seen["body"]
+    assert body == {"action": "read", "resource_type": "ahu", "resource_id": "rooftop-1"}
+    # The console submits the bare verb; the gateway composes the typed action/id.
+    assert ":" not in body["action"]
+    assert ":" not in body["resource_id"]
+
+
+def test_direct_typed_request_omits_resource_type():
+    """A fully-typed (direct) request sends no resource_type."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return _allow_response(request)
+
+    _client(handler).evaluate(action="read:ahu", resource_id="ahu:rooftop-1")
+    assert seen["body"] == {"action": "read:ahu", "resource_id": "ahu:rooftop-1"}
+    assert "resource_type" not in seen["body"]
+
+
 # ---------------------------------------------------------------------------
 # Response classification
 # ---------------------------------------------------------------------------

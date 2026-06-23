@@ -20,8 +20,9 @@
       <p class="record-desc">{{ s.summary }}</p>
       <dl class="kv">
         <dt>Subject</dt><dd>{{ s.subject_id }} (<code>{{ s.subject_type }}</code>)</dd>
-        <dt>Action</dt><dd><code>{{ s.action }}</code></dd>
-        <dt>Resource</dt><dd><code>{{ s.resource_id }}</code> (<code>{{ s.resource_type }}</code>)</dd>
+        <dt>Verb / resource type</dt><dd><code>{{ s.action_verb }}</code> / <code>{{ s.resource_type }}</code></dd>
+        <dt>Local resource ID</dt><dd><code>{{ s.resource_id }}</code></dd>
+        <dt>Gateway composes</dt><dd><code>{{ s.composed_action }}</code> on <code>{{ s.composed_resource_id }}</code></dd>
         <dt>Context</dt>
         <dd>
           {% if s.context %}<code>{{ s.context | replace("\n", "; ") }}</code>{% else %}<span class="muted">none</span>{% endif %}

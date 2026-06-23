@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–6)
+# basis-console — Architecture Notes (Phases 1–7)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -236,13 +236,19 @@ adapters already emit fully-qualified actions.
 
 ### What Phase 6 changes
 
+> **Superseded by Phase 7.** Phase 6 had the *console* compose the `{verb}:{domain}`
+> action string. Phase 7 moves composition to `basis-gateway`: the console now
+> submits a bare verb plus a `resource_type` and lets the gateway compose the
+> canonical action **and** resource id. See
+> "[Phase 7 gateway resource composition alignment](#phase-7-gateway-resource-composition-alignment)".
+
 The simulator replaces the single bare-action input with **structured action
-construction**: an operator chooses an **action verb** and an **action domain**,
-and the console composes the final action string (`{verb}:{domain}`, e.g.
-`read:ahu`). The form surfaces the verb, the domain, the composed string, the
-normalized request preview, and the gateway response when evaluated. Both preview
-mode and gateway-evaluation mode use the composed string, so the simulator no
-longer produces a bare action for gateway evaluation.
+construction**: an operator chooses an **action verb** and an **action domain**.
+Through Phase 6 the console composed the final action string (`{verb}:{domain}`,
+e.g. `read:ahu`) itself; from Phase 7 it submits the bare verb and the resource
+type and the gateway composes. The form surfaces the verb, the domain, a preview
+of what the gateway will compose, the normalized request preview, and the
+gateway response when evaluated.
 
 ### The temporary local vocabulary bridge
 
@@ -298,6 +304,74 @@ shared definitions instead of maintaining a local copy. Until then, this
 document and `basis_console.vocabulary` record the assumptions the console is
 making and mark them explicitly as provisional.
 
+## Phase 7 gateway resource composition alignment
+
+Phase 7 aligns the console's request builder with `basis-gateway`'s composition
+boundary. It does not change any console invariant; it changes only the *shape*
+of the request the console hands to the gateway.
+
+### Composition belongs to the gateway
+
+`basis-gateway` is the action/resource composition boundary. It accepts a
+normalized request and composes the canonical kernel identifiers:
+
+```
+Adapters / console provide normalization inputs.
+basis-gateway composes the canonical action and resource_id.
+basis-core evaluates the canonical request.
+```
+
+Through Phase 6 the console pre-composed the `{verb}:{domain}` action itself and
+sent an already-typed `resource_id` next to a separate, merely-descriptive
+`resource_type`. That is a dual source of truth: the descriptive `resource_type`
+and the `resource_id` prefix can drift. Phase 7 removes the pre-composition. The
+console now submits the *normalized* inputs and lets the gateway compose.
+
+### The two valid request shapes
+
+- **Normalized (preferred).** `{"action": "read", "resource_type": "ahu",
+  "resource_id": "rooftop-1"}` — a bare verb, the resource type, and a *local*
+  (untyped) resource id. The gateway composes `action = read:ahu` and
+  `resource_id = ahu:rooftop-1`. Omitting the resource id is a valid
+  domain-level request (the gateway composes the action only;
+  `resource_id = null`).
+- **Direct (fully typed).** `{"action": "read:ahu",
+  "resource_id": "ahu:rooftop-1"}` — used only when an operator intentionally
+  enters a kernel-compatible request. `resource_type` is omitted and the gateway
+  passes the request through unchanged.
+
+The console never sends a `resource_type` alongside an already-typed
+`resource_id` — even when the prefix matches — because that reintroduces the
+dual source of truth. `basis_console.simulator.build_gateway_request` encodes
+this rule and rejects the invalid combination before any call is made.
+
+### `resource_type` is dual-purpose
+
+In a normalized request `resource_type` is not a display label: the gateway uses
+the same field to compose both the action domain (`{verb}:{resource_type}`) and
+the resource-identifier prefix (`{resource_type}:{local_id}`). The console
+therefore carries a single `resource_type` field rather than a separate action
+domain and resource type. Whether the action domain and the resource type
+*should* be the same concept is a real open question owned by
+`basis-architecture` / future `basis-schemas`; the console does not resolve it,
+and Phase 7 explicitly does **not** split them or resolve the resource taxonomy.
+
+### Composition evidence display
+
+When the gateway composes identifiers it records evidence under keys prefixed
+with `basis_gateway.` (e.g. `basis_gateway.composed_resource_id`). If those keys
+appear in the `/v1/evaluate` response, the simulator surfaces them in a small
+"Gateway composition" panel. The console only *reads* this evidence for display;
+it never sets `basis_gateway.*` keys (the gateway rejects caller-supplied ones).
+
+### Still inside the same boundaries
+
+Phase 7 adds no evaluation, no `basis-core` import, and no new egress. The
+console submits a normalized request and relays the gateway's response verbatim.
+The provisional `basis_console.vocabulary` bridge remains a console-local mirror
+(now exposing `RESOURCE_TYPES` and preview-only `compose_action` /
+`compose_resource_id` helpers) and is still **not** the vocabulary authority.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -346,7 +420,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–6)
+## Endpoints (Phases 1–7)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |

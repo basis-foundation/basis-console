@@ -98,22 +98,26 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
     submit, never what the system would decide. The ``slug`` is a stable id used
     to load a scenario into the form via a query parameter.
 
-    Each scenario carries a structured action (``action_verb`` + ``action_domain``)
-    plus the precomposed ``action`` string the simulator would build from them
-    (e.g. ``read:ahu``), which matches basis-core's ``{verb}:{domain}`` naming.
+    Each scenario carries the *normalized* inputs the console submits — a bare
+    ``action_verb``, a ``resource_type`` (the dual-purpose domain), and a LOCAL
+    ``resource_id`` — never an already-typed resource id paired with a separate
+    descriptive resource type (that would be a dual source of truth). The
+    ``composed_action`` / ``composed_resource_id`` fields show what the gateway
+    will compose (e.g. ``read:ahu`` on ``ahu:rooftop-1``) and are display aids,
+    not part of the submitted body.
     """
     return [
         {
             "slug": "operator-read-ahu-temp",
             "title": "Building operator reads AHU temperature",
-            "summary": "A routine read of a rooftop air-handler supply-air sensor.",
+            "summary": "A routine read of a rooftop air-handler.",
             "subject_id": "operator-jane",
             "subject_type": "user",
             "action_verb": "read",
-            "action_domain": "ahu",
-            "action": "read:ahu",
-            "resource_id": "ahu:rooftop-1:supply-temp",
-            "resource_type": "sensor",
+            "resource_type": "ahu",
+            "resource_id": "rooftop-1",
+            "composed_action": "read:ahu",
+            "composed_resource_id": "ahu:rooftop-1",
             "context": "site=bldg-a",
         },
         {
@@ -123,10 +127,10 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
             "subject_id": "tech-mike",
             "subject_type": "user",
             "action_verb": "write",
-            "action_domain": "setpoint",
-            "action": "write:setpoint",
-            "resource_id": "hvac:zone-3:setpoint",
-            "resource_type": "actuator",
+            "resource_type": "setpoint",
+            "resource_id": "zone-3",
+            "composed_action": "write:setpoint",
+            "composed_resource_id": "setpoint:zone-3",
             "context": "maintenance_window=true\nsite=bldg-a",
         },
         {
@@ -136,10 +140,10 @@ def sample_simulator_scenarios() -> list[dict[str, Any]]:
             "subject_id": "vendor-acme",
             "subject_type": "service",
             "action_verb": "execute",
-            "action_domain": "command",
-            "action": "execute:command",
-            "resource_id": "device:restricted-controller",
             "resource_type": "device",
+            "resource_id": "restricted-controller",
+            "composed_action": "execute:device",
+            "composed_resource_id": "device:restricted-controller",
             "context": "vendor=acme\nticket=chg-1042",
         },
     ]
