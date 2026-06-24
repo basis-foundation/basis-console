@@ -8,6 +8,7 @@ Pages (all read-only with respect to system state):
   GET  /simulate/examples — sample simulator scenarios (read-only)
   GET  /audit             — audit viewer placeholder (sample data, read-only)
   GET  /identity          — Identity & Access Explorer (sample data, read-only)
+  GET  /gateway           — Gateway Diagnostics (live gateway health/readiness)
 
 Rendering uses Jinja2 with templates and static assets served locally from this
 package, so the console has no CDN or internet dependency and works air-gapped.
@@ -31,6 +32,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from basis_console.diagnostics import gather_gateway_diagnostics
 from basis_console.gateway import GatewayClient, GatewayStatusReport
 from basis_console.identity import (
     IDENTITY_BOUNDARY_NOTICE,
@@ -97,6 +99,7 @@ _NAV = [
     ("Simulate", "/simulate"),
     ("Audit", "/audit"),
     ("Identity", "/identity"),
+    ("Gateway", "/gateway"),
 ]
 
 
@@ -310,3 +313,28 @@ def identity(request: Request) -> HTMLResponse:
     ctx["access"] = sample_access_preview()
     ctx["future_integrations"] = future_identity_integrations()
     return templates.TemplateResponse(request, "identity.html", ctx)
+
+
+@router.get(
+    "/gateway",
+    response_class=HTMLResponse,
+    summary="Gateway Diagnostics (operational visibility, read-only)",
+)
+def gateway_diagnostics(request: Request) -> HTMLResponse:
+    """Render the Gateway Diagnostics view.
+
+    Probes the gateway's real ``/health`` and ``/ready`` endpoints (through the
+    gateway client) and displays the results: connection summary, health,
+    readiness with dynamically-rendered components, evaluation/policy capability,
+    correlation IDs, and the raw redacted responses.
+
+    This is observability only. The console does not configure the gateway,
+    authenticate users, evaluate policy, call ``basis-core``, or bypass the
+    gateway. Sensitive headers/fields are redacted defensively before display.
+    Live data is shown when the gateway is reachable; clear offline / unconfigured
+    states are shown otherwise.
+    """
+    client = _gateway_client(request)
+    ctx = _base_context(request, active="/gateway")
+    ctx["diagnostics"] = gather_gateway_diagnostics(client)
+    return templates.TemplateResponse(request, "gateway.html", ctx)
