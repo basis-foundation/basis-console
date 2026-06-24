@@ -7,6 +7,7 @@ Pages (all read-only with respect to system state):
   POST /simulate          — validate input + render a normalized request preview
   GET  /simulate/examples — sample simulator scenarios (read-only)
   GET  /audit             — audit viewer placeholder (sample data, read-only)
+  GET  /identity          — Identity & Access Explorer (sample data, read-only)
 
 Rendering uses Jinja2 with templates and static assets served locally from this
 package, so the console has no CDN or internet dependency and works air-gapped.
@@ -31,6 +32,13 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from basis_console.gateway import GatewayClient, GatewayStatusReport
+from basis_console.identity import (
+    IDENTITY_BOUNDARY_NOTICE,
+    IDENTITY_SAMPLE_NOTICE,
+    future_identity_integrations,
+    sample_access_preview,
+    sample_identity_preview,
+)
 from basis_console.sample_data import (
     SAMPLE_DATA_NOTICE,
     sample_audit_events,
@@ -88,6 +96,7 @@ _NAV = [
     ("Policies", "/policies"),
     ("Simulate", "/simulate"),
     ("Audit", "/audit"),
+    ("Identity", "/identity"),
 ]
 
 
@@ -270,3 +279,34 @@ def audit(request: Request) -> HTMLResponse:
     ctx["decisions"] = sample_decisions()
     ctx["events"] = sample_audit_events()
     return templates.TemplateResponse(request, "audit.html", ctx)
+
+
+@router.get(
+    "/identity",
+    response_class=HTMLResponse,
+    summary="Identity & Access Explorer (read-only, sample data)",
+)
+def identity(request: Request) -> HTMLResponse:
+    """Render the Identity & Access Explorer.
+
+    This page is render/inspect/explain only. It displays a SAMPLE normalized
+    subject, an unverified token/claims preview, the claim→subject mapping the
+    gateway would perform, a link into the existing simulator (which never sends
+    the subject as identity), and a clearly-labelled list of future
+    ``basis-identity`` integrations.
+
+    The console does not authenticate, authorize, verify tokens, evaluate policy,
+    or call ``basis-core`` here. Nothing on this page submits to the gateway; the
+    data is sample/demo data, labelled as such.
+    """
+    preview = sample_identity_preview()
+    ctx = _base_context(request, active="/identity")
+    ctx["notice"] = IDENTITY_SAMPLE_NOTICE
+    ctx["boundary_notice"] = IDENTITY_BOUNDARY_NOTICE
+    ctx["identity"] = preview
+    # Pretty-printed claim set for safe nested rendering. Jinja autoescaping makes
+    # the string inert; the console performs no token verification.
+    ctx["claims_json"] = json.dumps(preview.claims.raw, indent=2, sort_keys=False)
+    ctx["access"] = sample_access_preview()
+    ctx["future_integrations"] = future_identity_integrations()
+    return templates.TemplateResponse(request, "identity.html", ctx)

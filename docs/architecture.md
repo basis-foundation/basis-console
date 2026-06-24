@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–7)
+# basis-console — Architecture Notes (Phases 1–8)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -372,6 +372,65 @@ The provisional `basis_console.vocabulary` bridge remains a console-local mirror
 (now exposing `RESOURCE_TYPES` and preview-only `compose_action` /
 `compose_resource_id` helpers) and is still **not** the vocabulary authority.
 
+## Phase 8 Identity & Access Explorer
+
+Phase 8 adds an operator-facing **Identity & Access Explorer** (`GET /identity`)
+and prepares the console for a future `basis-identity` service. It adds no new
+egress, no evaluation, and no `basis-core` import; it changes only what the
+console *renders*. The page is render / inspect / explain only.
+
+### What the console does and does not own here
+
+The console renders, inspects, submits (through the gateway), and explains
+identity/access context. It must **not** authenticate independently, authorize,
+evaluate policy, call `basis-core` directly, become an identity provider, or
+implement SAML / OIDC / SCIM / OAuth itself. These are the same invariants as
+earlier phases, applied to identity:
+
+- **No independent authentication / token verification.** The claims/token
+  preview is explicitly **unverified**. Token verification (signature, issuer,
+  audience, expiry) belongs to `basis-gateway`. The console holds no credentials
+  and runs no login flow on this page.
+- **No subject derivation for live decisions.** The normalized "verified
+  subject" and the claim→subject mapping are **illustrative previews**. For live
+  evaluation the gateway derives the subject from its verified token; the console
+  never derives identity and never sends a subject as identity (the simulator
+  linkage preserves the Phase 4 identity boundary).
+- **No protocol implementation.** The console may *display* protocol data but
+  implements none. Presentation models in `src/basis_console/identity.py` are
+  named `IdentityPreview` / `ClaimPreview` / `SubjectPreview` / `AccessPreview`
+  (plus `MappingStep` / `FutureIntegration`) and deliberately avoid
+  protocol-ownership names like `OidcProvider`, `SamlService`, `ScimEngine`, or
+  `OAuthServer`.
+
+### Sample data, no invented endpoints
+
+`basis-gateway` does not yet expose subject/identity diagnostic endpoints, so the
+page renders **sample/demo data**, clearly labelled as such, and invents no
+gateway endpoints. The presentation models are structured so live gateway /
+`basis-identity` data can replace the samples later with minimal template change.
+
+### The future `basis-identity` relationship
+
+A future `basis-identity` repository will own identity lifecycle and federation.
+The relationship is one-way and enforced by the gateway:
+
+```
+External IdP → basis-identity → basis-gateway → basis-core
+
+basis-console observes and operates the flow; it owns none of it.
+```
+
+`basis-identity` will integrate with external IdPs — it will not replace them.
+The Identity & Access Explorer documents this relationship and lists the future
+integrations (OIDC discovery viewer, OAuth flow explorer, JWT inspector, JWKS
+viewer, SAML assertion viewer, SCIM event viewer, access-review workflows) as
+**non-live, future** capabilities the console will eventually display, not
+implement. Phase 8 does **not** implement `basis-identity`, any identity
+protocol, token verification, IdP administration, provisioning, password auth,
+MFA, or access-review execution, and modifies neither `basis-gateway` nor
+`basis-core`.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -420,7 +479,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–7)
+## Endpoints (Phases 1–8)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
@@ -432,4 +491,5 @@ later without changing the contract.
 | POST   | `/simulate`          | HTML | Preview mode: validate + render request shape. Gateway mode (`mode=gateway`): forward to gateway `/v1/evaluate` and display the response.|
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
 | GET    | `/audit`             | HTML | Audit viewer placeholder (sample data, read-only).           |
+| GET    | `/identity`          | HTML | Identity & Access Explorer (sample data, read-only).        |
 ```

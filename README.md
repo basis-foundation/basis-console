@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 7**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, and (new in Phase 7) **alignment with gateway-owned action/resource composition**. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 8**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, and (new in Phase 8) an operator-facing **Identity & Access Explorer** that prepares the console for a future `basis-identity` service. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 As of Phase 7 the console submits an **adapter/console-normalized** request — a bare action verb, a `resource_type`, and a *local* `resource_id` — and **`basis-gateway` composes** the canonical kernel action (`read:ahu`) and the typed resource id (`ahu:rooftop-1`). The console no longer pre-composes those canonical strings (see [Phase 7](#phase-7-gateway-resource-composition-alignment) below). The verb/resource-type lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
@@ -154,6 +154,28 @@ Core evaluates the canonical request.
 
 Explicitly **out of scope** (later phases): OIDC login, user sessions, token refresh, browser-stored tokens, live policy / audit / decision viewers, adapter integration, deployment tooling (Docker, Kubernetes), metrics, multi-user sessions, and RBAC. Phase 7 also does **not** create `basis-schemas`, resolve the resource taxonomy, or split the action domain from the resource type.
 
+**Phase 8 (Identity & Access Explorer foundation — this phase):**
+
+Phase 8 adds an operator-facing **Identity & Access Explorer** at `GET /identity` and prepares the console to work cleanly with a future `basis-identity` service. It is a console *feature area*, not a protocol implementation. The page renders, inspects, and explains identity/access context — it does **not** authenticate, authorize, evaluate policy, verify tokens, or call `basis-core`, and it implements no OIDC/OAuth/SAML/SCIM/JWKS.
+
+- **Verified subject.** Displays a normalized BASIS subject (`subject_id`, `subject_type`, `roles`, `groups`, `issuer`) — shown as clearly-labelled **sample** data, since the console does not derive or verify identity.
+- **Claims / token preview.** A read-only viewer of a (nested) OIDC-style claim set with issuer/audience/expiration, marked **unverified**. The console performs no token verification — that belongs to the gateway.
+- **Subject normalization preview.** Shows how claims become a BASIS subject (`OIDC claims → gateway subject mapper → BASIS Subject`) with role/group mapping tables. Illustrative; the gateway owns the real mapping.
+- **Access decision linkage.** A "Use this subject in evaluation" link into the existing simulator. The subject is **never** sent as identity — live evaluation derives the subject from the gateway's verified token; the link only previews how a request would be shaped.
+- **Future `basis-identity` integration panel.** A clearly-labelled, **non-live** list of upcoming capabilities (OIDC discovery viewer, OAuth flow explorer, JWT inspector, JWKS viewer, SAML assertion viewer, SCIM event viewer, access review workflows). These are future integrations the console will *display*, never implement.
+
+Console-owned presentation models live in `src/basis_console/identity.py` (`IdentityPreview`, `ClaimPreview`, `SubjectPreview`, `AccessPreview`, plus supporting `MappingStep` / `FutureIntegration`). They are deliberately named `*Preview` and avoid protocol-ownership names (`OidcProvider`, `SamlService`, `ScimEngine`, `OAuthServer`): the console can display protocol data, but it must not implement the protocols. **All data on this page is sample/demo data** — no live gateway or identity APIs are consumed, and no gateway endpoints were invented. The structure lets live gateway/`basis-identity` data replace the samples later.
+
+The intended relationship the page documents:
+
+```
+External IdP → basis-identity → basis-gateway → basis-core
+
+basis-console observes and operates the flow; it owns none of it.
+```
+
+`basis-identity` (a future repository) will own identity lifecycle and federation; it will integrate with external IdPs, not replace them. Phase 8 explicitly does **not** implement `basis-identity`, OIDC/OAuth/SAML/SCIM, token verification, IdP administration, user provisioning, password auth, MFA, or access-review execution; it does not modify `basis-gateway` or `basis-core` or create `basis-schemas`.
+
 ---
 
 ## Relationship to the ecosystem
@@ -241,13 +263,14 @@ basis-console/
     readiness.py       # readiness state tracker
     sample_data.py     # read-only SAMPLE data for placeholder views + scenarios
     simulator.py       # decision-simulator validation + preview builder (Phases 3 + 6)
+    identity.py        # Identity & Access Explorer presentation models + SAMPLE data (Phase 8)
     vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
     gateway/           # gateway client abstraction (Phases 2 + 4)
       client.py        #   httpx-based /health + /ready probe and /v1/evaluate call
       models.py        #   GatewayStatus + GatewayEvaluationStatus/Result types
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
-    ui/views.py        # /, /policies, /simulate (GET+POST), /audit (HTML)
-    ui/templates/      # Jinja2 templates (incl. simulate + examples)
+    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity (HTML)
+    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity)
     ui/static/         # locally served CSS (no CDN)
   tests/               # health, routes, config, gateway, simulator, eval tests
   docs/architecture.md # console boundaries and phase notes
