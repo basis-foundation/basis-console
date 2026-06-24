@@ -8,6 +8,7 @@ audit, or decision data; the console does not interpret authorization state.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from enum import Enum
 from typing import Any
 
@@ -70,6 +71,45 @@ class GatewayStatusReport:
             "ready": self.ready,
             "detail": self.detail,
         }
+
+
+@dataclass(frozen=True)
+class GatewayProbeResult:
+    """Result of a single diagnostic probe of a gateway operational endpoint.
+
+    Captured for the Gateway Diagnostics view (``/gateway``). Unlike
+    :class:`GatewayStatusReport`, which summarizes overall connectivity, this
+    records the *raw* outcome of one ``GET`` so an operator can inspect exactly
+    what the gateway returned. Every field is derived solely from the gateway's
+    response (or the lack of one); no secret is ever stored here — headers and
+    body are redacted defensively before they reach this object.
+
+    Fields
+    ──────
+    endpoint        The probed path (e.g. ``/health`` or ``/ready``).
+    target_url      The full URL probed, or None when the gateway is unconfigured.
+    checked_at      ISO-8601 UTC timestamp of when the probe ran.
+    not_configured  True when no base URL is set; no request was attempted.
+    reached         True when an HTTP response was received.
+    http_status     The HTTP status code returned, or None when not reached.
+    ok              True when ``http_status`` is 200.
+    response_json   The parsed (and redacted) response body, when JSON.
+    headers         Selected, redacted response headers (lowercased keys).
+    correlation_id  The ``X-Correlation-ID`` response header, when present.
+    error           Transport error message when the gateway could not be reached.
+    """
+
+    endpoint: str
+    target_url: str | None = None
+    checked_at: str = ""
+    not_configured: bool = False
+    reached: bool = False
+    http_status: int | None = None
+    ok: bool = False
+    response_json: dict[str, Any] | None = None
+    headers: dict[str, str] = dataclass_field(default_factory=dict)
+    correlation_id: str | None = None
+    error: str | None = None
 
 
 class GatewayEvaluationStatus(str, Enum):

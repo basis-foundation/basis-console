@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 8**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, and (new in Phase 8) an operator-facing **Identity & Access Explorer** that prepares the console for a future `basis-identity` service. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 9**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, and (new in Phase 9) a **Gateway Diagnostics** view that gives operators live visibility into gateway health, readiness, capability, and correlation IDs. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 As of Phase 7 the console submits an **adapter/console-normalized** request — a bare action verb, a `resource_type`, and a *local* `resource_id` — and **`basis-gateway` composes** the canonical kernel action (`read:ahu`) and the typed resource id (`ahu:rooftop-1`). The console no longer pre-composes those canonical strings (see [Phase 7](#phase-7-gateway-resource-composition-alignment) below). The verb/resource-type lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
@@ -176,6 +176,31 @@ basis-console observes and operates the flow; it owns none of it.
 
 `basis-identity` (a future repository) will own identity lifecycle and federation; it will integrate with external IdPs, not replace them. Phase 8 explicitly does **not** implement `basis-identity`, OIDC/OAuth/SAML/SCIM, token verification, IdP administration, user provisioning, password auth, MFA, or access-review execution; it does not modify `basis-gateway` or `basis-core` or create `basis-schemas`.
 
+**Phase 9 (Gateway Diagnostics — this phase):**
+
+Phase 9 adds a **Gateway Diagnostics** view at `GET /gateway` that makes `basis-gateway`'s operational state understandable to an operator. It continues the direction of the Identity & Access Explorer: the console **observes, inspects, and explains**; the gateway **authenticates, composes, enforces, and emits evidence**; the kernel **evaluates**. The view does **not** configure the gateway, authenticate users, evaluate policy, call `basis-core`, or bypass the gateway.
+
+It probes only the gateway's **real** operational endpoints (`GET /health`, `GET /ready`) through the existing gateway client — it invents no endpoints and fabricates no data. The page is useful in three states:
+
+- **Configured and reachable** — shows live health, readiness, readiness components, capability, and correlation IDs.
+- **Configured but unreachable** — shows a clear connection error and never falls back to local authorization behavior.
+- **Not configured** — explains that `GATEWAY_BASE_URL` must be set.
+
+UI panels:
+
+1. **Connection summary** — gateway base URL, connection state, health/readiness HTTP status, and last-checked time.
+2. **Health** — the result of `GET /health` (status, service, target URL), or an error when unreachable.
+3. **Readiness** — the result of `GET /ready`, including per-component status **rendered dynamically** (arbitrary component keys are shown safely, since gateway readiness may evolve) with reasons for not-ready components.
+4. **Evaluation & policy capability** — evaluation/policy-related readiness components (`evaluator_initialized`, `policy_loaded`, `oidc_configured`, `jwks_available`) when reported. The gateway does **not** expose `policy_version`/`policy_name` on `/health` or `/ready` (only on evaluation responses), so the panel says so rather than inventing a policy endpoint.
+5. **Correlation IDs** — the `X-Correlation-ID` returned on the health and readiness responses. The evaluation correlation ID is surfaced on the Simulate page; the console never fabricates correlation IDs.
+6. **Raw responses** — the raw, **redacted** payloads and selected headers for health/readiness, for learning and debugging.
+
+**Security:** sensitive headers and fields (`authorization`, `access_token`, `refresh_token`, `id_token`, `client_secret`, `password`, `secret`, cookies, bearer tokens, API keys) are **redacted defensively** before any value is stored on a result object or rendered — see `basis_console.gateway.redaction`. The console never displays the configured Bearer token and never sends it to `/health` or `/ready`.
+
+The gateway client gains two diagnostic probes, `get_health()` and `get_ready()`, that capture HTTP status, response JSON, selected headers, correlation ID, the request target URL, a `checked_at` timestamp, and any transport error — each returning a presentation-friendly `GatewayProbeResult` and never raising into a route. `basis_console.diagnostics` aggregates these into the view model. No method calls a non-existent gateway endpoint.
+
+**Future identity diagnostics** (OIDC discovery, JWKS, JWT inspection) will integrate through the future `basis-identity` service, not through console-owned protocol logic. Phase 9 does **not** add packet capture, proxy/traffic sniffing, deployment tooling, policy editing, an audit/resource explorer, authentication, or any identity protocol, and modifies neither `basis-gateway` nor `basis-core`.
+
 ---
 
 ## Relationship to the ecosystem
@@ -264,13 +289,15 @@ basis-console/
     sample_data.py     # read-only SAMPLE data for placeholder views + scenarios
     simulator.py       # decision-simulator validation + preview builder (Phases 3 + 6)
     identity.py        # Identity & Access Explorer presentation models + SAMPLE data (Phase 8)
+    diagnostics.py     # Gateway Diagnostics aggregator / presentation model (Phase 9)
     vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
-    gateway/           # gateway client abstraction (Phases 2 + 4)
-      client.py        #   httpx-based /health + /ready probe and /v1/evaluate call
-      models.py        #   GatewayStatus + GatewayEvaluationStatus/Result types
+    gateway/           # gateway client abstraction (Phases 2 + 4 + 9)
+      client.py        #   httpx /health + /ready probes, /v1/evaluate, diagnostic probes
+      models.py        #   GatewayStatus + GatewayEvaluationStatus/Result + GatewayProbeResult
+      redaction.py     #   defensive redaction of sensitive headers/fields (Phase 9)
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
-    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity (HTML)
-    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity)
+    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity, /gateway (HTML)
+    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway)
     ui/static/         # locally served CSS (no CDN)
   tests/               # health, routes, config, gateway, simulator, eval tests
   docs/architecture.md # console boundaries and phase notes

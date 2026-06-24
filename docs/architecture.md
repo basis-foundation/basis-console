@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–8)
+# basis-console — Architecture Notes (Phases 1–9)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -431,6 +431,75 @@ protocol, token verification, IdP administration, provisioning, password auth,
 MFA, or access-review execution, and modifies neither `basis-gateway` nor
 `basis-core`.
 
+## Phase 9 Gateway Diagnostics
+
+Phase 9 adds a **Gateway Diagnostics** view (`GET /gateway`) that makes the
+gateway's operational state legible to an operator. It is observability only and
+adds no new boundary: it changes what the console *renders*, not what it *does*.
+
+```
+basis-console observes, inspects, submits, and explains.
+basis-gateway authenticates, composes, enforces, and emits evidence.
+basis-core evaluates.
+```
+
+### What the diagnostics view does and does not own
+
+- **Observe, don't configure.** The view reads gateway health/readiness; it never
+  sets gateway configuration, restarts components, or mutates gateway state.
+- **No authentication / authorization / evaluation.** Invariants #1–#2 hold: the
+  diagnostics path runs no policy logic, makes no decision, and imports no
+  `basis-core`. It does not authenticate users; the configured Bearer token is
+  never displayed and is never sent to `/health` or `/ready`.
+- **No gateway bypass, no invented endpoints.** The view probes only the
+  gateway's **real** operational endpoints (`/health`, `/ready`) through the
+  single gateway-client egress (invariant #5). The client gains `get_health()`
+  and `get_ready()` probes; it adds **no** method that calls a non-existent
+  endpoint. Where the gateway does not expose a datum (e.g. `policy_version` is
+  returned only on `/v1/evaluate`, not on `/health` / `/ready`), the UI states
+  that plainly instead of fabricating it.
+
+### Probe result model and redaction
+
+`GatewayClient.get_health()` / `get_ready()` each return a typed
+`GatewayProbeResult` capturing the request target URL, `checked_at` timestamp,
+HTTP status, parsed response JSON, selected response headers, the
+`X-Correlation-ID`, and any transport error — and, like the Phase 2/4 methods,
+never raise into a route. `basis_console.diagnostics.gather_gateway_diagnostics`
+aggregates the two probes into the view model, deriving the connection state,
+the dynamically-rendered readiness components (arbitrary keys are shown safely so
+the console does not depend on a fixed component set), the evaluation/policy
+capability view, and the correlation-ID entries.
+
+Sensitive values are **redacted defensively** by
+`basis_console.gateway.redaction` before they are ever stored on a result object
+or rendered — header names and JSON keys containing `authorization`,
+`access_token`, `refresh_token`, `id_token`, `client_secret`, `password`,
+`secret`, `cookie`, `bearer`, or `api_key` have their values replaced. This is
+display hygiene layered on top of the fact that the console sends no credentials
+to the probed endpoints; it ensures a future gateway change or a misbehaving
+proxy cannot leak a secret through the raw-response viewer.
+
+### Three operational states
+
+The view is designed to be useful whether the gateway is reachable or not:
+
+- **configured + reachable** → live health/readiness data, components, capability,
+  and correlation IDs;
+- **configured + unreachable** → a clear connection error; the console surfaces no
+  live state and never substitutes local authorization behavior;
+- **not configured** → an explanation that `GATEWAY_BASE_URL` must be set.
+
+### Future identity diagnostics
+
+Identity-oriented diagnostics (OIDC discovery, JWKS, JWT inspection) are **not**
+part of this view and will integrate through the future `basis-identity` service,
+not through console-owned protocol logic. The console will *display* such data
+later; it will never implement the protocols (see the Phase 8 Identity & Access
+Explorer). Phase 9 deliberately excludes packet capture, proxy/traffic
+inspection, an audit/resource explorer, policy editing, deployment tooling, and
+any modification to `basis-gateway` or `basis-core`.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -479,7 +548,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–8)
+## Endpoints (Phases 1–9)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
@@ -492,4 +561,5 @@ later without changing the contract.
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
 | GET    | `/audit`             | HTML | Audit viewer placeholder (sample data, read-only).           |
 | GET    | `/identity`          | HTML | Identity & Access Explorer (sample data, read-only).        |
+| GET    | `/gateway`           | HTML | Gateway Diagnostics — live gateway health/readiness (read-only). |
 ```

@@ -21,6 +21,7 @@ from basis_console.gateway.client import GatewayClient
 from basis_console.gateway.models import (
     GatewayEvaluationResult,
     GatewayEvaluationStatus,
+    GatewayProbeResult,
     GatewayStatus,
     GatewayStatusReport,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "GatewayClient",
     "GatewayEvaluationResult",
     "GatewayEvaluationStatus",
+    "GatewayProbeResult",
     "GatewayStatus",
     "GatewayStatusReport",
 ]

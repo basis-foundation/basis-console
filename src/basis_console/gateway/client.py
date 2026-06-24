@@ -28,6 +28,7 @@ object.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -35,9 +36,11 @@ import httpx
 from basis_console.gateway.models import (
     GatewayEvaluationResult,
     GatewayEvaluationStatus,
+    GatewayProbeResult,
     GatewayStatus,
     GatewayStatusReport,
 )
+from basis_console.gateway.redaction import redact_headers, redact_json
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +160,92 @@ class GatewayClient:
             configured=True,
             reachable=True,
             detail=f"/health ok; /ready returned HTTP {ready.status_code}",
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 9 — operational diagnostics probes
+    # ------------------------------------------------------------------
+    # These probe the SAME real gateway endpoints as check_status() (/health and
+    # /ready) but capture the raw, redacted outcome of each call for the Gateway
+    # Diagnostics view. They invent no endpoints and never raise into a route.
+
+    def get_health(self) -> GatewayProbeResult:
+        """Probe ``GET /health`` and capture the raw, redacted result. Never raises."""
+        return self._diagnostic_probe("/health")
+
+    def get_ready(self) -> GatewayProbeResult:
+        """Probe ``GET /ready`` and capture the raw, redacted result. Never raises."""
+        return self._diagnostic_probe("/ready")
+
+    def _diagnostic_probe(self, endpoint: str) -> GatewayProbeResult:
+        checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if self._base_url is None:
+            return GatewayProbeResult(
+                endpoint=endpoint,
+                target_url=None,
+                checked_at=checked_at,
+                not_configured=True,
+            )
+
+        target_url = f"{self._base_url}{endpoint}"
+        try:
+            with httpx.Client(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                transport=self._transport,
+            ) as client:
+                response = client.get(endpoint)
+        except httpx.HTTPError as exc:
+            log.warning("Gateway diagnostic probe of %s failed: %s", target_url, exc)
+            return GatewayProbeResult(
+                endpoint=endpoint,
+                target_url=target_url,
+                checked_at=checked_at,
+                reached=False,
+                error=f"could not contact gateway: {exc}",
+            )
+        except Exception as exc:  # pragma: no cover - defensive catch-all
+            log.error("Unexpected error probing %s: %s", target_url, exc)
+            return GatewayProbeResult(
+                endpoint=endpoint,
+                target_url=target_url,
+                checked_at=checked_at,
+                reached=False,
+                error=f"unexpected error: {exc}",
+            )
+
+        return self._build_probe_result(endpoint, target_url, checked_at, response)
+
+    @staticmethod
+    def _build_probe_result(
+        endpoint: str,
+        target_url: str,
+        checked_at: str,
+        response: httpx.Response,
+    ) -> GatewayProbeResult:
+        """Map an HTTP response to a redacted ``GatewayProbeResult``. Never raises."""
+        body: dict[str, Any] | None = None
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                # Redact defensively before the body is ever stored or rendered.
+                body = redact_json(parsed)
+        except Exception:
+            body = None
+
+        headers = redact_headers(response.headers)
+        correlation_id = response.headers.get("X-Correlation-ID")
+
+        return GatewayProbeResult(
+            endpoint=endpoint,
+            target_url=target_url,
+            checked_at=checked_at,
+            reached=True,
+            http_status=response.status_code,
+            ok=response.status_code == 200,
+            response_json=body,
+            headers=headers,
+            correlation_id=correlation_id,
         )
 
     # ------------------------------------------------------------------

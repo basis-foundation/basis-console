@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Gateway Diagnostics{% endblock %}
+{% block content %}
+  <h1>Gateway Diagnostics</h1>
+  <p class="lead">
+    Operational visibility into <code>basis-gateway</code> — health, readiness,
+    readiness components, evaluation capability, and correlation IDs. The console
+    observes and explains gateway state; it does not configure the gateway,
+    authenticate users, evaluate policy, or bypass the gateway.
+  </p>
+
+  {# ── 1. Gateway Connection Summary ─────────────────────────────────────── #}
+  <section class="status-panel">
+    <h2>Connection summary</h2>
+    <dl class="kv">
+      <dt>Gateway URL</dt>
+      <dd>
+        {% if diagnostics.base_url %}<code>{{ diagnostics.base_url }}</code>{% else %}<span class="muted">not configured</span>{% endif %}
+      </dd>
+      <dt>Connection</dt>
+      <dd><span class="badge gw-{{ diagnostics.connection_state }}">{{ diagnostics.connection_state }}</span></dd>
+      <dt>Health</dt>
+      <dd>
+        {% if diagnostics.health.not_configured %}<span class="muted">n/a</span>
+        {% elif diagnostics.health.reached %}<span class="gw-status gw-{{ 'success' if diagnostics.health.ok else 'gateway_error' }}">HTTP {{ diagnostics.health.http_status }}</span>
+        {% else %}<span class="gw-status gw-unavailable">unreachable</span>{% endif %}
+      </dd>
+      <dt>Readiness</dt>
+      <dd>
+        {% if diagnostics.ready.not_configured %}<span class="muted">n/a</span>
+        {% elif diagnostics.ready.reached %}<span class="gw-status gw-{{ 'success' if diagnostics.ready.ok else 'validation_error' }}">HTTP {{ diagnostics.ready.http_status }}</span>
+        {% else %}<span class="gw-status gw-unavailable">unreachable</span>{% endif %}
+      </dd>
+      <dt>Last checked</dt>
+      <dd class="mono">{{ diagnostics.checked_at }}</dd>
+    </dl>
+    <p class="notice {% if diagnostics.connection_state == 'ready' %}ok-notice{% elif diagnostics.connection_state in ('unreachable', 'error') %}warn-notice{% endif %}">
+      {{ diagnostics.connection_summary }}
+    </p>
+    {% if diagnostics.connection_state == 'not_configured' %}
+      <p class="notice">
+        Set the <code>GATEWAY_BASE_URL</code> environment variable to a running
+        <code>basis-gateway</code> instance (for example
+        <code>http://localhost:8000</code>) and reload this page to see live
+        health and readiness data.
+      </p>
+    {% endif %}
+  </section>
+
+  {# ── 2. Health Check Panel ─────────────────────────────────────────────── #}
+  <h2>Health <span class="tag">GET /health</span></h2>
+  {% if diagnostics.health.not_configured %}
+    <p class="notice">No gateway configured — no health probe was attempted.</p>
+  {% elif diagnostics.health.reached %}
+    <article class="record">
+      <dl class="kv">
+        <dt>Target</dt><dd class="mono">{{ diagnostics.health.target_url }}</dd>
+        <dt>HTTP status</dt><dd class="mono">{{ diagnostics.health.http_status }}</dd>
+        {% if diagnostics.health.response_json %}
+          <dt>status</dt><dd class="mono">{{ diagnostics.health.response_json.get("status", "—") }}</dd>
+          <dt>service</dt><dd class="mono">{{ diagnostics.health.response_json.get("service", "—") }}</dd>
+        {% endif %}
+      </dl>
+    </article>
+  {% else %}
+    <p class="notice warn-notice">
+      Could not contact the gateway{% if diagnostics.health.error %} ({{ diagnostics.health.error }}){% endif %}.
+    </p>
+  {% endif %}
+
+  {# ── 3. Readiness Panel ────────────────────────────────────────────────── #}
+  <h2>Readiness <span class="tag">GET /ready</span></h2>
+  {% if diagnostics.ready.not_configured %}
+    <p class="notice">No gateway configured — no readiness probe was attempted.</p>
+  {% elif diagnostics.ready.reached %}
+    <article class="record">
+      <dl class="kv">
+        <dt>Target</dt><dd class="mono">{{ diagnostics.ready.target_url }}</dd>
+        <dt>HTTP status</dt><dd class="mono">{{ diagnostics.ready.http_status }}</dd>
+        <dt>Overall</dt>
+        <dd>
+          {% if diagnostics.overall_ready is none %}<span class="muted">unknown</span>
+          {% elif diagnostics.overall_ready %}<span class="outcome allow">ready</span>
+          {% else %}<span class="outcome deny">not ready</span>{% endif %}
+        </dd>
+      </dl>
+
+      <h3>Components</h3>
+      {% if diagnostics.components %}
+        {# Components are rendered dynamically: whatever keys the gateway reports. #}
+        <table class="grid">
+          <thead><tr><th>Component</th><th>Ready</th><th>Reason</th></tr></thead>
+          <tbody>
+            {% for component in diagnostics.components %}
+              <tr>
+                <td class="mono">{{ component.name }}</td>
+                <td><span class="outcome {{ 'allow' if component.ready else 'deny' }}">{{ "yes" if component.ready else "no" }}</span></td>
+                <td>{{ component.reason if component.reason else "" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">The gateway reported no individual readiness components.</p>
+      {% endif %}
+    </article>
+  {% else %}
+    <p class="notice warn-notice">
+      Could not read readiness{% if diagnostics.ready.error %} ({{ diagnostics.ready.error }}){% endif %}.
+    </p>
+  {% endif %}
+
+  {# ── 4. Policy / Evaluation Capability Panel ───────────────────────────── #}
+  <h2>Evaluation &amp; policy capability</h2>
+  <article class="record">
+    {% if diagnostics.policy.exposed %}
+      <dl class="kv">
+        {% for component in diagnostics.policy.components %}
+          <dt class="mono">{{ component.name }}</dt>
+          <dd><span class="outcome {{ 'allow' if component.ready else 'deny' }}">{{ "yes" if component.ready else "no" }}</span></dd>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p class="muted">
+        The gateway reported no evaluation/policy readiness components.
+      </p>
+    {% endif %}
+    <p class="notice">{{ diagnostics.policy.note }}</p>
+  </article>
+
+  {# ── 5. Correlation ID Panel ───────────────────────────────────────────── #}
+  <h2>Correlation IDs</h2>
+  <article class="record">
+    <dl class="kv">
+      {% for entry in diagnostics.correlation_ids %}
+        <dt>{{ entry.label }}</dt>
+        <dd>
+          {% if entry.value %}<span class="mono">{{ entry.value }}</span> <span class="muted">({{ entry.source }})</span>
+          {% else %}<span class="muted">not present</span>{% endif %}
+        </dd>
+      {% endfor %}
+    </dl>
+    <p class="notice">
+      Correlation IDs are generated by the gateway and returned on the
+      <code>X-Correlation-ID</code> response header. The evaluation correlation ID
+      is surfaced on the Simulate page when a gateway decision is returned — it is
+      not generated here, and the console never fabricates correlation IDs.
+    </p>
+  </article>
+
+  {# ── 6. Raw Response Viewer ────────────────────────────────────────────── #}
+  <h2>Raw responses <span class="tag">redacted</span></h2>
+  <p class="lead">
+    Raw payloads and selected headers for learning and debugging. Sensitive
+    headers and fields (authorization, tokens, cookies, secrets) are redacted
+    defensively before display.
+  </p>
+
+  {% if diagnostics.health_json or diagnostics.health_headers %}
+    <details class="raw-response" open>
+      <summary>/health response</summary>
+      {% if diagnostics.health_headers %}
+        <h3>Headers</h3>
+        <dl class="kv">
+          {% for name, value in diagnostics.health_headers.items() %}
+            <dt class="mono">{{ name }}</dt><dd class="mono">{{ value }}</dd>
+          {% endfor %}
+        </dl>
+      {% endif %}
+      {% if diagnostics.health_json %}
+        <h3>Body</h3>
+        <pre class="json"><code>{{ diagnostics.health_json }}</code></pre>
+      {% endif %}
+    </details>
+  {% endif %}
+
+  {% if diagnostics.ready_json or diagnostics.ready_headers %}
+    <details class="raw-response" open>
+      <summary>/ready response</summary>
+      {% if diagnostics.ready_headers %}
+        <h3>Headers</h3>
+        <dl class="kv">
+          {% for name, value in diagnostics.ready_headers.items() %}
+            <dt class="mono">{{ name }}</dt><dd class="mono">{{ value }}</dd>
+          {% endfor %}
+        </dl>
+      {% endif %}
+      {% if diagnostics.ready_json %}
+        <h3>Body</h3>
+        <pre class="json"><code>{{ diagnostics.ready_json }}</code></pre>
+      {% endif %}
+    </details>
+  {% endif %}
+
+  {% if not diagnostics.configured %}
+    <p class="notice">
+      Raw responses will appear here once a gateway is configured and reachable.
+    </p>
+  {% endif %}
+
+  <section class="boundary">
+    <h3>What this view is not</h3>
+    <p>
+      Gateway Diagnostics provides operational visibility into gateway
+      health/readiness. It does not configure the gateway, authenticate users,
+      evaluate policy, or bypass the gateway. Future identity diagnostics
+      (OIDC/JWKS/JWT inspection) will integrate through the future
+      <code>basis-identity</code> service, not through console-owned protocol logic.
+    </p>
+  </section>
+{% endblock %}
