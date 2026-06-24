@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Identity &amp; Access{% endblock %}
+{% block content %}
+  <h1>Identity &amp; Access Explorer</h1>
+  <p class="lead">
+    Inspect how an external identity becomes a normalized BASIS subject, view the
+    claims and mappings behind an access decision, and see where the future
+    <code>basis-identity</code> service will plug in. This page renders, inspects,
+    and explains — it does not authenticate, authorize, or evaluate.
+  </p>
+  <p class="notice">{{ notice }}</p>
+  <p class="notice">{{ boundary_notice }}</p>
+
+  {# ── 1. Verified Subject ───────────────────────────────────────────────── #}
+  <h2>Verified subject {% if identity.is_sample %}<span class="tag">sample</span>{% endif %}</h2>
+  <p class="lead">
+    The normalized BASIS subject the gateway derives from a verified token. Shown
+    here as sample data — the console does not derive or verify identity.
+  </p>
+  <article class="record">
+    <dl class="kv">
+      <dt>subject_id</dt><dd class="mono">{{ identity.subject.subject_id }}</dd>
+      <dt>subject_type</dt><dd>{{ identity.subject.subject_type }}</dd>
+      <dt>roles</dt>
+      <dd>
+        {% for role in identity.subject.roles %}<code>{{ role }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+      </dd>
+      <dt>groups</dt>
+      <dd>
+        {% for group in identity.subject.groups %}<code>{{ group }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+      </dd>
+      <dt>issuer</dt><dd class="mono">{{ identity.subject.issuer }}</dd>
+    </dl>
+  </article>
+
+  {# ── 2. Claims / Token Preview ─────────────────────────────────────────── #}
+  <h2>Claims / token preview {% if identity.is_sample %}<span class="tag">sample</span>{% endif %}</h2>
+  <p class="notice warn-notice">{{ identity.claims.not_verified_note }}</p>
+  <article class="record">
+    <dl class="kv">
+      <dt>issuer</dt><dd class="mono">{{ identity.claims.issuer }}</dd>
+      <dt>audience</dt><dd class="mono">{{ identity.claims.audience }}</dd>
+      <dt>expiration</dt><dd class="mono">{{ identity.claims.expires_at }}</dd>
+    </dl>
+  </article>
+  <div class="preview">
+    <h3>Raw claims (read-only, unverified)</h3>
+    <pre class="json"><code>{{ claims_json }}</code></pre>
+  </div>
+
+  {# ── 3. Subject Normalization Preview ──────────────────────────────────── #}
+  <h2>Subject normalization preview</h2>
+  <p class="lead">
+    How identity claims become BASIS subject context. The gateway owns this
+    normalization; the console only illustrates it.
+  </p>
+  <div class="flow">
+    <span class="flow-step">OIDC claims</span>
+    <span class="flow-arrow">&darr;</span>
+    <span class="flow-step">gateway subject mapper</span>
+    <span class="flow-arrow">&darr;</span>
+    <span class="flow-step">BASIS Subject</span>
+  </div>
+
+  <h3>Role mapping</h3>
+  <table class="grid">
+    <thead><tr><th>Source claim</th><th>Maps to</th><th>Result</th></tr></thead>
+    <tbody>
+      {% for m in identity.role_mappings %}
+        <tr>
+          <td class="mono">{{ m.source }}</td>
+          <td>{{ m.target }}</td>
+          <td class="mono">{{ m.result }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Group mapping</h3>
+  <table class="grid">
+    <thead><tr><th>Source claim</th><th>Maps to</th><th>Result</th></tr></thead>
+    <tbody>
+      {% for m in identity.group_mappings %}
+        <tr>
+          <td class="mono">{{ m.source }}</td>
+          <td>{{ m.target }}</td>
+          <td class="mono">{{ m.result }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Normalization steps</h3>
+  <ol class="steps">
+    {% for step in identity.normalization_steps %}
+      <li>{{ step }}</li>
+    {% endfor %}
+  </ol>
+
+  {# ── 4. Access Decision Explorer Linkage ───────────────────────────────── #}
+  <h2>Use this subject in evaluation</h2>
+  <article class="record">
+    <p class="record-desc">{{ access.summary }}</p>
+    <p class="notice">{{ access.identity_note }}</p>
+    <p>
+      <a class="badge" href="/simulate?example={{ access.simulator_example }}">
+        Preview how this subject would be submitted to the gateway &rarr;
+      </a>
+    </p>
+  </article>
+
+  {# ── 5. Future basis-identity Integration Panel ────────────────────────── #}
+  <section class="boundary">
+    <h2>Future <code>basis-identity</code> integrations <span class="tag">future &middot; not live</span></h2>
+    <p>
+      These capabilities are <strong>not</strong> current console functionality.
+      They will be provided by the future <code>basis-identity</code> service,
+      which will integrate with external identity providers — it will not replace
+      them. The console will be able to <em>display</em> their output later; it
+      will never implement these protocols itself.
+    </p>
+    <dl class="kv future-list">
+      {% for item in future_integrations %}
+        <dt>{{ item.name }}</dt><dd>{{ item.description }}</dd>
+      {% endfor %}
+    </dl>
+    <p class="muted">
+      Relationship: External IdP &rarr; basis-identity &rarr; basis-gateway &rarr;
+      basis-core. basis-console observes and operates the flow; it owns none of it.
+    </p>
+  </section>
+{% endblock %}
