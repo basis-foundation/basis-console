@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 11**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, a **Gateway Diagnostics** view, an **Audit Explorer**, and (new in Phase 11) a **Resource Explorer** that makes visible how OT/platform resources become normalized authorization targets. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 12**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, a **Gateway Diagnostics** view, an **Audit Explorer**, a **Resource Explorer** that makes visible how OT/platform resources become normalized authorization targets, and (new in Phase 12) an **Operator Workspace / Overview** that brings these areas together into a single orientation landing page organized around operational questions. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 As of Phase 7 the console submits an **adapter/console-normalized** request — a bare action verb, a `resource_type`, and a *local* `resource_id` — and **`basis-gateway` composes** the canonical kernel action (`read:ahu`) and the typed resource id (`ahu:rooftop-1`). The console no longer pre-composes those canonical strings (see [Phase 7](#phase-7-gateway-resource-composition-alignment) below). The verb/resource-type lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
@@ -241,6 +241,26 @@ Console-owned presentation models live in `src/basis_console/resources.py` (`Res
 
 Phase 11 explicitly does **not** add device discovery, resource inventory storage, topology mapping, CRUD/mutation, policy authoring, live adapter integrations, `basis-schemas`, or deployment tooling, and modifies none of `basis-adapters`, `basis-gateway`, or `basis-core`.
 
+**Phase 12 (Operator Workspace / Overview — this phase):**
+
+Phase 12 adds a read-only **Operator Workspace / Overview** at `GET /workspace` that brings the existing console areas — Identity & Access, Resources, Decision Simulator, Gateway Diagnostics, and Audit Explorer — together into a single operational landing page. It organizes those areas around operational *questions* (Who is the subject? What resource is targeted? Can this action be performed? Is the enforcement boundary healthy? What evidence was recorded?) rather than repository names, and presents the BASIS operational model (Identity → Resource → Gateway → Decision → Audit) with each stage linked to the area that makes it inspectable. The simple homepage at `GET /` stays the landing page and now links prominently to the workspace.
+
+This is an **orientation/workspace foundation**, not a new backend integration. The Operator Workspace **organizes existing console views**; it does **not** add backend authority, does **not** change `basis-gateway`, `basis-core`, or `basis-adapters` behavior, and does **not** make sample data live. The only live datum it surfaces is the gateway connection/readiness state, reused from the existing **Gateway Diagnostics** aggregator (`basis_console.diagnostics`) — no new diagnostics logic is added and `basis-core` is never called.
+
+UI areas:
+
+1. **Workspace header** — states the purpose: identity, resources, gateway state, authorization simulation, and audit evidence in a single operational view, and that the page summarizes and links existing capabilities rather than adding new ones.
+2. **Operational flow summary** — the BASIS model `Identity → Resource → Gateway → Decision → Audit`, each stage mapped to `/identity`, `/resources`, `/gateway`, `/simulate`, `/audit`.
+3. **Capability cards** — one card per area (Identity & Access, Resources, Decision Simulator, Gateway Diagnostics, Audit Explorer) with purpose, the question it helps answer, a link, and a live/sample status.
+4. **Operational questions panel** — the operator questions above, each linked to the relevant page.
+5. **System readiness snapshot** — an honest gateway connection/readiness summary reused from Gateway Diagnostics; shows configured/unconfigured/unreachable state honestly and links to `/gateway` for the full view.
+6. **Current data maturity panel** — distinguishes **live/configurable** (gateway health/readiness, gateway-backed evaluations), **sample/explanatory** (identity previews, resource catalog, audit history), and **future** (`basis-identity`, live resource catalog, live audit history).
+7. **Recommended operator path** — Check Gateway → Inspect Identity → Inspect Resources → Run Evaluation → Review Audit Evidence, each step linked to its page.
+
+Console-owned presentation models live in `src/basis_console/workspace.py` (`WorkspaceCard`, `OperationalQuestion`, `DataMaturityItem`, `OperatorPathStep`, plus `FlowStep`). They are named for what the console *shows* and deliberately avoid names that would imply backend authority (`SystemState`, `CanonicalWorkspace`, `OperationalControlPlane`).
+
+Phase 12 explicitly does **not** add a live resource catalog, live audit history, identity protocol flows, policy editing, user provisioning, device discovery, topology mapping, persistent storage, or any `basis-core` call, and modifies none of `basis-core`, `basis-gateway`, or `basis-adapters`. It does not redesign the UI or replace existing pages.
+
 ---
 
 ## Relationship to the ecosystem
@@ -332,14 +352,15 @@ basis-console/
     diagnostics.py     # Gateway Diagnostics aggregator / presentation model (Phase 9)
     audit.py           # Audit Explorer presentation models + SAMPLE events (Phase 10)
     resources.py       # Resource Explorer presentation models + SAMPLE resources (Phase 11)
+    workspace.py       # Operator Workspace presentation models + orientation content (Phase 12)
     vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
     gateway/           # gateway client abstraction (Phases 2 + 4 + 9)
       client.py        #   httpx /health + /ready probes, /v1/evaluate, diagnostic probes
       models.py        #   GatewayStatus + GatewayEvaluationStatus/Result + GatewayProbeResult
       redaction.py     #   defensive redaction of sensitive headers/fields (Phase 9)
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
-    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity, /resources, /gateway (HTML)
-    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway + audit + resources)
+    ui/views.py        # /, /workspace, /policies, /simulate (GET+POST), /audit, /identity, /resources, /gateway (HTML)
+    ui/templates/      # Jinja2 templates (incl. workspace + simulate + examples + identity + gateway + audit + resources)
     ui/static/         # locally served CSS (no CDN)
   tests/               # health, routes, config, gateway, simulator, eval tests
   docs/architecture.md # console boundaries and phase notes

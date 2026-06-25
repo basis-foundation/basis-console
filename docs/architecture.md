@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–11)
+# basis-console — Architecture Notes (Phases 1–12)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -634,6 +634,56 @@ implements none of them and adds no device discovery, inventory storage, topolog
 mapping, CRUD/mutation, policy authoring, `basis-schemas`, or deployment tooling,
 and modifies none of `basis-adapters`, `basis-gateway`, or `basis-core`.
 
+## Phase 12 Operator Workspace / Overview
+
+Phase 12 adds a read-only **Operator Workspace / Overview** (`GET /workspace`)
+that brings the existing console areas together into a single orientation landing
+page. It is a **workspace/orientation** phase, not a new backend integration: it
+organizes existing views rather than adding new responsibilities. The simple
+homepage at `/` remains the landing page and links prominently to `/workspace`.
+
+The workspace presents the BASIS operational model — `Identity → Resource →
+Gateway → Decision → Audit` — with each stage mapped to an existing console area
+(`/identity`, `/resources`, `/gateway`, `/simulate`, `/audit`), and reframes the
+console around operational *questions* (Who is the subject? What resource is
+targeted? Can this action be performed? Is the enforcement boundary healthy? What
+evidence was recorded?) rather than repository names.
+
+### What the workspace does and does not own
+
+The Operator Workspace **organizes** existing console capability. It adds **no**
+backend authority: it does not authenticate, authorize, evaluate, own identity
+protocols, own audit semantics, own resource inventory, or call `basis-core`. It
+does not change `basis-gateway`, `basis-core`, or `basis-adapters` behavior, and
+it does not make any sample data live. It does not redesign the UI or replace
+existing pages — every page continues to work unchanged.
+
+### Reused diagnostics, no duplicated logic
+
+The only live datum on the workspace is the gateway connection/readiness
+snapshot, obtained by reusing the existing Gateway Diagnostics aggregator
+(`gather_gateway_diagnostics` in `basis_console.diagnostics`). No new diagnostics
+logic, endpoints, or data are invented; when the gateway is unconfigured or
+unreachable the snapshot says so honestly and links to `/gateway` for the full
+view.
+
+### Data maturity, stated honestly
+
+A data-maturity panel distinguishes **live/configurable** (gateway
+health/readiness, gateway-backed evaluations) from **sample/explanatory**
+(identity previews, resource catalog, audit history) from **future**
+(`basis-identity`, live resource catalog, live audit history). This preserves the
+auditability invariant: the workspace never presents sample data as live.
+
+### Presentation models and naming
+
+Console-owned presentation models live in `src/basis_console/workspace.py`
+(`WorkspaceCard`, `OperationalQuestion`, `DataMaturityItem`, `OperatorPathStep`,
+and `FlowStep`). They are named for what the console *shows* and deliberately
+avoid names that would imply backend authority (`SystemState`,
+`CanonicalWorkspace`, `OperationalControlPlane`). The module imports no
+`basis-core`.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -682,13 +732,14 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–11)
+## Endpoints (Phases 1–12)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
 | GET    | `/health`            | JSON | Liveness probe.                                               |
 | GET    | `/ready`             | JSON | Readiness probe; includes gateway connectivity state.        |
-| GET    | `/`                  | HTML | Status / landing page with gateway status panel.             |
+| GET    | `/`                  | HTML | Status / landing page with gateway status panel; links to the workspace. |
+| GET    | `/workspace`         | HTML | Operator Workspace / Overview — orientation across all areas (read-only). |
 | GET    | `/policies`          | HTML | Policy viewer placeholder (sample data, read-only).          |
 | GET    | `/simulate`          | HTML | Decision-simulator request builder (optional `?example=`).   |
 | POST   | `/simulate`          | HTML | Preview mode: validate + render request shape. Gateway mode (`mode=gateway`): forward to gateway `/v1/evaluate` and display the response.|

@@ -2,6 +2,7 @@
 
 Pages (all read-only with respect to system state):
   GET  /                  — health / landing page showing the console is running
+  GET  /workspace         — Operator Workspace / Overview: orientation across all areas
   GET  /policies          — policy viewer placeholder (sample data, read-only)
   GET  /simulate          — decision-simulator request builder (Phase 3)
   POST /simulate          — validate input + render a normalized request preview
@@ -65,6 +66,15 @@ from basis_console.simulator import (
     build_simulation,
 )
 from basis_console.vocabulary import ACTION_VERBS, RESOURCE_TYPES
+from basis_console.workspace import (
+    WORKSPACE_INTRO,
+    WORKSPACE_SUMMARY_NOTICE,
+    capability_cards,
+    data_maturity,
+    operational_flow,
+    operational_questions,
+    operator_path,
+)
 
 # Note explaining the preview-mode boundary, surfaced on the simulator page.
 SIMULATOR_NO_EVAL_NOTICE = (
@@ -107,6 +117,7 @@ router = APIRouter()
 # Navigation shared by every page (label, path).
 _NAV = [
     ("Home", "/"),
+    ("Workspace", "/workspace"),
     ("Policies", "/policies"),
     ("Simulate", "/simulate"),
     ("Audit", "/audit"),
@@ -138,6 +149,39 @@ def index(request: Request) -> HTMLResponse:
     ctx = _base_context(request, active="/")
     ctx["gateway"] = _gateway_status(request)
     return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@router.get(
+    "/workspace",
+    response_class=HTMLResponse,
+    summary="Operator Workspace / Overview (orientation, read-only)",
+)
+def workspace(request: Request) -> HTMLResponse:
+    """Render the Operator Workspace / Overview.
+
+    An orientation landing page that brings the existing console areas — Identity
+    & Access, Resources, Decision Simulator, Gateway Diagnostics, Audit Explorer —
+    together and organizes them around operational questions (Who? What? Can
+    they? Is the boundary healthy? What happened?).
+
+    This page adds no backend authority. It links to the existing pages rather
+    than re-implementing them, and it distinguishes live/configurable data from
+    sample/explanatory data and future integrations. The only live datum is the
+    gateway connection/readiness state, reused from the existing Gateway
+    Diagnostics aggregator — no new diagnostics logic and no basis-core call.
+    """
+    ctx = _base_context(request, active="/workspace")
+    ctx["intro"] = WORKSPACE_INTRO
+    ctx["summary_notice"] = WORKSPACE_SUMMARY_NOTICE
+    ctx["flow"] = operational_flow()
+    ctx["cards"] = capability_cards()
+    ctx["questions"] = operational_questions()
+    ctx["maturity"] = data_maturity()
+    ctx["path_steps"] = operator_path()
+    # Reuse the existing diagnostics aggregator for an honest readiness snapshot.
+    # No duplicated logic; the page links to /gateway for the full view.
+    ctx["diagnostics"] = gather_gateway_diagnostics(_gateway_client(request))
+    return templates.TemplateResponse(request, "workspace.html", ctx)
 
 
 @router.get("/policies", response_class=HTMLResponse, summary="Policy viewer (read-only)")

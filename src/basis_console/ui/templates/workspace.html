@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Operator Workspace{% endblock %}
+{% block content %}
+  <h1>Operator Workspace</h1>
+
+  <p class="lead">{{ intro }}</p>
+
+  <p class="notice">{{ summary_notice }}</p>
+
+  <section class="status-panel">
+    <h2>Operational flow</h2>
+    <p class="muted">
+      How BASIS reasons about a request — each stage maps to a console area you
+      can inspect.
+    </p>
+    <div class="flow">
+      {% for step in flow %}
+        <a class="flow-step" href="{{ step.path }}">{{ step.label }}</a>
+        {% if not loop.last %}<span class="flow-arrow">&darr;</span>{% endif %}
+      {% endfor %}
+    </div>
+    <dl class="kv">
+      {% for step in flow %}
+        <dt><a href="{{ step.path }}">{{ step.label }}</a></dt>
+        <dd>{{ step.blurb }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <h2>Capabilities</h2>
+  <div class="cards">
+    {% for card in cards %}
+      <a class="card" href="{{ card.path }}">
+        <h2>{{ card.title }}</h2>
+        <p><strong>Question:</strong> {{ card.question }}</p>
+        <p>{{ card.purpose }}</p>
+        <p class="muted"><span class="tag">{{ card.status }}</span></p>
+      </a>
+    {% endfor %}
+  </div>
+
+  <section class="status-panel">
+    <h2>Operational questions</h2>
+    <p class="muted">
+      The workspace orients you around operational tasks, not repository names.
+    </p>
+    <table class="grid">
+      <thead>
+        <tr><th>Question</th><th>Where to look</th></tr>
+      </thead>
+      <tbody>
+        {% for q in questions %}
+          <tr>
+            <td>{{ q.question }}<br><span class="muted">{{ q.answer_hint }}</span></td>
+            <td><a href="{{ q.path }}">{{ q.link_label }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="status-panel">
+    <h2>System readiness snapshot</h2>
+    <p class="muted">
+      Live gateway state, reused from
+      <a href="/gateway">Gateway Diagnostics</a>. This is the only live datum on
+      this page.
+    </p>
+    <dl class="kv">
+      <dt>Gateway URL</dt>
+      <dd>
+        {% if diagnostics.base_url %}<code>{{ diagnostics.base_url }}</code>{% else %}<span class="muted">not configured</span>{% endif %}
+      </dd>
+      <dt>Connection</dt>
+      <dd><span class="badge gw-{{ diagnostics.connection_state }}">{{ diagnostics.connection_state }}</span></dd>
+      <dt>Overall ready</dt>
+      <dd>
+        {% if diagnostics.overall_ready is none %}<span class="muted">unknown</span>
+        {% elif diagnostics.overall_ready %}<span class="outcome allow">ready</span>
+        {% else %}<span class="outcome deny">not ready</span>{% endif %}
+      </dd>
+    </dl>
+    <p class="notice {% if diagnostics.connection_state == 'ready' %}ok-notice{% elif diagnostics.connection_state in ('unreachable', 'error') %}warn-notice{% endif %}">
+      {{ diagnostics.connection_summary }}
+    </p>
+    <p><a href="/gateway">Open full Gateway Diagnostics &rarr;</a></p>
+  </section>
+
+  <section class="status-panel">
+    <h2>Current data maturity</h2>
+    <p class="muted">
+      What is live, what is sample/explanatory, and what is planned. The
+      workspace never presents sample data as live.
+    </p>
+
+    <h3>Live / configurable</h3>
+    <dl class="future-list">
+      {% for item in maturity if item.tier == 'live' %}
+        <dt>{{ item.label }}</dt>
+        <dd class="muted">{{ item.detail }}</dd>
+      {% endfor %}
+    </dl>
+
+    <h3>Sample / explanatory</h3>
+    <dl class="future-list">
+      {% for item in maturity if item.tier == 'sample' %}
+        <dt>{{ item.label }}</dt>
+        <dd class="muted">{{ item.detail }}</dd>
+      {% endfor %}
+    </dl>
+
+    <h3>Future</h3>
+    <dl class="future-list">
+      {% for item in maturity if item.tier == 'future' %}
+        <dt>{{ item.label }}</dt>
+        <dd class="muted">{{ item.detail }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section class="status-panel">
+    <h2>Recommended operator path</h2>
+    <ol class="steps">
+      {% for step in path_steps %}
+        <li><a href="{{ step.path }}">{{ step.title }}</a> — {{ step.detail }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="boundary">
+    <h3>What this workspace is not</h3>
+    <p>
+      The Operator Workspace organizes existing console views. It does not add
+      backend authority, does not change <code>basis-gateway</code>,
+      <code>basis-core</code>, or <code>basis-adapters</code> behavior, and does
+      not make sample data live. The console reaches the system only through the
+      gateway.
+    </p>
+  </section>
+{% endblock %}
