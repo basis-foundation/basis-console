@@ -76,11 +76,11 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="basis-console",
         description=(
-            "Human-facing operational interface for the BASIS ecosystem. "
-            "Read-only with respect to system state (Phase 3): reports gateway "
-            "connection status and provides a decision-simulator request builder "
-            "that previews requests. Does not evaluate authorization or "
-            "authenticate users."
+            "Human-facing, gateway-first operational interface for the BASIS "
+            "ecosystem. Read-oriented with respect to system state: it observes, "
+            "inspects, submits requests through basis-gateway, and explains the "
+            "authorization model. It does not evaluate authorization, authenticate "
+            "users, or call basis-core."
         ),
         version="0.1.0",
         lifespan=lifespan,

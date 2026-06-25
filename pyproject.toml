@@ -5,7 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "basis-console"
 version = "0.1.0"
-description = "Human-facing operational interface for the BASIS ecosystem (read-only; Phase 3: gateway status + decision-simulator request builder)"
+description = "Human-facing, gateway-first operational interface for the BASIS ecosystem (read-oriented; observes, inspects, submits through basis-gateway, and explains — does not evaluate authorization or authenticate users)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.111.0",
@@ -22,6 +24,10 @@ dev = [
     "mypy>=1.10.0",
     "ruff>=0.4.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/basis-foundation/basis-console"
+Issues = "https://github.com/basis-foundation/basis-console/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/basis_console"]
