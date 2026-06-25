@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}BASIS Console &middot; Resources{% endblock %}
+{% block content %}
+  <h1>Resource Explorer</h1>
+
+  {# ── 1. Resource Overview ──────────────────────────────────────────────── #}
+  <p class="lead">
+    See what BASIS reasons about: resources, actions, resource identifiers,
+    adapter sources, and gateway request shapes. This page shows how OT and
+    platform resources become normalized authorization targets. The console
+    <strong>displays resource concepts and authorization targets — it does not
+    discover devices or own resource inventory</strong>.
+  </p>
+  <p class="notice">{{ notice }}</p>
+  <p class="notice">{{ boundary_notice }}</p>
+
+  {# ── 4. Identifier Explanation ─────────────────────────────────────────── #}
+  <h2>How resource identifiers work</h2>
+  <p class="lead">{{ identifier_notice }}</p>
+  <dl class="kv">
+    <dt>local resource_id</dt>
+    <dd>The identifier meaningful within an adapter's source system (e.g. <code>rooftop-1</code>).</dd>
+    <dt>resource_type</dt>
+    <dd>The type/domain used to compose both the action and the resource id (e.g. <code>ahu</code>).</dd>
+    <dt>canonical resource_id</dt>
+    <dd>The typed identifier the gateway composes (e.g. <code>ahu:rooftop-1</code>).</dd>
+  </dl>
+  <div class="flow">
+    <span class="flow-step">resource_type + local_resource_id</span>
+    <span class="flow-arrow">&darr;</span>
+    <span class="flow-step">gateway</span>
+    <span class="flow-arrow">&darr;</span>
+    <span class="flow-step">canonical_resource_id</span>
+  </div>
+  <p class="muted">
+    The gateway also accepts a direct, already-typed request shape:
+  </p>
+  <pre class="json"><code>{
+  "action": "read:ahu",
+  "resource_id": "ahu:rooftop-1"
+}</code></pre>
+  <p class="muted">
+    The console previews this composition for legibility; the gateway owns it.
+    The broader action-domain vs. resource-type question is not resolved here.
+  </p>
+
+  {# ── 2. Resource Catalog ───────────────────────────────────────────────── #}
+  <h2>Resource catalog <span class="tag">sample</span></h2>
+  <p class="lead">
+    Sample normalized resources across every current adapter family. Identifiers,
+    supported actions, and request shapes are illustrative, not a live inventory.
+  </p>
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Resource</th>
+        <th>Type</th>
+        <th>Local id</th>
+        <th>Canonical id</th>
+        <th>Protocol family</th>
+        <th>Source</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in resources %}
+        <tr>
+          <td><a href="#{{ r.slug }}">{{ r.display_name }}</a></td>
+          <td><code>{{ r.resource_type }}</code></td>
+          <td class="mono">{{ r.local_resource_id }}</td>
+          <td class="mono">{{ r.canonical_resource_id }}</td>
+          <td>{{ r.protocol_family }}</td>
+          <td class="mono">{{ r.adapter_source.name }}</td>
+          <td>
+            {% for a in r.supported_actions %}<code>{{ a.verb }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ── 3. Resource Detail View (inline expandable) ───────────────────────── #}
+  <h2>Resource detail</h2>
+  <p class="lead">
+    Expand a resource for its identifier, adapter source, supported actions,
+    gateway request preview, and redacted raw payload.
+  </p>
+  {% for r in resources %}
+    <details class="record audit-event" id="{{ r.slug }}" {% if loop.first %}open{% endif %}>
+      <summary>
+        <span class="mono">{{ r.canonical_resource_id }}</span>
+        &middot; {{ r.display_name }}
+        <span class="muted">&middot; {{ r.protocol_family }}</span>
+        {% if r.is_sample %}<span class="tag">sample</span>{% endif %}
+      </summary>
+
+      <h3>Resource</h3>
+      <dl class="kv">
+        <dt>Display name</dt><dd>{{ r.display_name }}</dd>
+        <dt>Protocol family</dt><dd>{{ r.protocol_family }}</dd>
+        <dt>Description</dt><dd>{{ r.description }}</dd>
+      </dl>
+
+      <h3>Identifier</h3>
+      <dl class="kv">
+        <dt>resource_type</dt><dd><code>{{ r.identifier.resource_type }}</code></dd>
+        <dt>local_resource_id</dt><dd class="mono">{{ r.identifier.local_resource_id }}</dd>
+        <dt>canonical_resource_id</dt><dd class="mono">{{ r.identifier.canonical_resource_id }}</dd>
+      </dl>
+
+      <h3>Adapter source</h3>
+      <dl class="kv">
+        <dt>Adapter</dt><dd class="mono">{{ r.adapter_source.name }}</dd>
+        <dt>Protocol family</dt><dd>{{ r.adapter_source.protocol_family }}</dd>
+        <dt>How it normalizes</dt><dd>{{ r.adapter_source.description }}</dd>
+      </dl>
+
+      <h3>Supported actions</h3>
+      <table class="grid">
+        <thead><tr><th>Verb</th><th>Composed action</th><th>Description</th></tr></thead>
+        <tbody>
+          {% for a in r.supported_actions %}
+            <tr>
+              <td><code>{{ a.verb }}</code></td>
+              <td class="mono">{{ a.canonical_action }}</td>
+              <td>{{ a.description }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {# ── 5. Gateway Request Preview ─────────────────────────────────────── #}
+      <h3>Gateway request preview</h3>
+      <p class="muted">
+        The preferred normalized shape the console would submit (bare verb +
+        resource_type + local resource_id). The gateway composes the canonical
+        action and resource id; the console does not evaluate.
+      </p>
+      <pre class="json"><code>{{ r.gateway_request.normalized_json }}</code></pre>
+      <dl class="kv">
+        <dt>Composed action</dt><dd class="mono">{{ r.gateway_request.canonical_action }}</dd>
+        <dt>Composed resource_id</dt><dd class="mono">{{ r.gateway_request.canonical_resource_id }}</dd>
+      </dl>
+
+      {# ── 6. Link To Simulator ──────────────────────────────────────────── #}
+      <h3>Use in evaluation</h3>
+      {% if r.simulator_example %}
+        <p>
+          <a class="badge" href="/simulate?example={{ r.simulator_example }}">
+            Open this resource in the simulator &rarr;
+          </a>
+        </p>
+        <p class="muted">
+          Preloads a matching sample scenario. The simulator previews the request
+          shape and can forward it to the gateway; it never evaluates locally and
+          never sends a subject as identity.
+        </p>
+      {% else %}
+        <p>
+          <a class="badge" href="/simulate">Open the simulator &rarr;</a>
+        </p>
+        <p class="muted">
+          Enter <code>action_verb={{ r.supported_actions[0].verb }}</code>,
+          <code>resource_type={{ r.resource_type }}</code>, and
+          <code>resource_id={{ r.local_resource_id }}</code> to build the request
+          for this resource. The simulator previews the request shape and never
+          evaluates locally. It does not bypass the gateway.
+        </p>
+      {% endif %}
+
+      <h3>Raw resource <span class="tag">redacted</span></h3>
+      <pre class="json"><code>{{ r.raw_json }}</code></pre>
+    </details>
+  {% endfor %}
+
+  {# ── 7. Future Integration Panel ───────────────────────────────────────── #}
+  <section class="boundary">
+    <h2>Future live resource integrations <span class="tag">future &middot; not live</span></h2>
+    <p>
+      These capabilities are <strong>not</strong> implemented in this phase. The
+      Resource Explorer is sample-backed today. Live resource data will eventually
+      be sourced through the gateway from the components below — the console will
+      <em>display</em> their output; it will never discover devices, own resource
+      inventory, or mutate OT systems.
+    </p>
+    <dl class="kv future-list">
+      {% for item in future_integrations %}
+        <dt>{{ item.name }}</dt><dd>{{ item.description }}</dd>
+      {% endfor %}
+    </dl>
+    <p class="muted">
+      Relationship: adapters normalize &rarr; gateway composes and catalogs &rarr;
+      schemas define contracts &rarr; console displays. basis-console observes and
+      operates; it owns none of the resource inventory.
+    </p>
+  </section>
+{% endblock %}
