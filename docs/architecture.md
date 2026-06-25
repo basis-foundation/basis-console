@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–10)
+# basis-console — Architecture Notes (Phases 1–11)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -559,6 +559,81 @@ non-live** integrations. Phase 10 implements none of them and adds no audit
 storage, persistent history, canonical schema, SIEM integration, policy editing,
 or resource explorer, and modifies neither `basis-gateway` nor `basis-core`.
 
+## Phase 11 Resource Explorer
+
+Phase 11 adds a read-only **Resource Explorer** (`GET /resources`) that makes
+visible what BASIS reasons about — resources, actions, resource identifiers,
+adapter sources, and gateway request shapes — so operators and contributors can
+see how OT/platform resources become normalized authorization targets. It is
+operational visibility only and introduces no new boundary.
+
+```
+basis-console displays resource concepts and authorization targets.
+It does not discover devices or own resource inventory.
+Adapters normalize. Gateway composes and catalogs. Console displays.
+```
+
+### What the Resource Explorer does and does not own
+
+- **Displays concepts; does not own inventory.** The view renders sample
+  normalized resources (display name, type, local/canonical identifier, adapter
+  source, supported actions, gateway request shape, raw payload). It is **not** a
+  resource inventory, device-discovery service, or topology map, and it does
+  **not** mutate resources or perform CRUD.
+- **No protocol contact, no adapter calls.** The console does not connect to OT
+  protocols, build protocol stacks, or call adapters directly. Adapter sources are
+  *labelled*, not invoked.
+- **No evaluation, no `basis-core`.** Invariants #1 and #5 hold: the page makes no
+  decision, runs no policy logic, and imports no `basis-core`. The "Use in
+  evaluation" affordance only links/guides into the existing simulator and never
+  bypasses the gateway.
+- **No invented endpoint.** `basis-adapters` does not yet expose a live
+  resource-inventory service and `basis-gateway` does not yet expose a
+  resource-catalog endpoint, so the catalog is clearly labelled **sample** data.
+  The console invents neither API.
+
+### Identifiers and composition
+
+The page explains the difference between the `local resource_id` (meaningful in an
+adapter's source system), the `resource_type`, and the **gateway-composed**
+`canonical resource_id` (`{type}:{local}`). Canonical identifiers and the example
+gateway request shapes are produced as a **preview mirror** of the gateway's
+composition via `basis_console.vocabulary` (`compose_action`,
+`compose_resource_id`); the gateway remains the composition authority. The page
+also shows the direct, already-typed request shape and does not resolve the
+broader action-domain vs. resource-type question (owned by `basis-architecture` /
+future `basis-schemas`).
+
+### Presentation models and naming
+
+Console-owned models live in `basis_console.resources`: `ResourcePreview`,
+`ResourceIdentifierPreview`, `ResourceActionPreview`, `AdapterSourcePreview`,
+`GatewayRequestPreview`, and `FutureResourceIntegration`. They are named
+`*Preview` and deliberately avoid canonical-ownership names (`Resource`,
+`CanonicalResource`, `DeviceInventory`, `ResourceStore`) — canonical resource
+contracts belong to a future `basis-schemas`. The sample set spans every current
+adapter family (BACnet, Modbus, OPC UA, MQTT, DNP3, IEC 61850, KNX, Niagara) plus
+REST.
+
+### Redaction
+
+Raw resource payloads are passed through `basis_console.gateway.redaction`
+(`redact_json`) before display, so credential-shaped fields (`authorization`,
+`access_token`, `refresh_token`, `id_token`, `client_secret`, `password`,
+`secret`, cookies, bearer tokens, API keys) are redacted defensively. The sample
+data includes credential-shaped attributes specifically to exercise this path.
+
+### Future live resource sources
+
+Live resource data will eventually be sourced and governed elsewhere —
+`basis-adapters` resource outputs, a `basis-gateway` resource catalog,
+`basis-schemas` resource contracts, `basis-identity` subject/resource mapping,
+`basis-deploy` site inventory, and optionally an external CMDB/OT inventory. The
+Resource Explorer lists these as **future, non-live** integrations. Phase 11
+implements none of them and adds no device discovery, inventory storage, topology
+mapping, CRUD/mutation, policy authoring, `basis-schemas`, or deployment tooling,
+and modifies none of `basis-adapters`, `basis-gateway`, or `basis-core`.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -607,7 +682,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–10)
+## Endpoints (Phases 1–11)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
@@ -620,5 +695,6 @@ later without changing the contract.
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
 | GET    | `/audit`             | HTML | Audit Explorer — decision events + gateway evidence (sample data, read-only). |
 | GET    | `/identity`          | HTML | Identity & Access Explorer (sample data, read-only).        |
+| GET    | `/resources`         | HTML | Resource Explorer — sample resources, identifiers, request shapes (read-only). |
 | GET    | `/gateway`           | HTML | Gateway Diagnostics — live gateway health/readiness (read-only). |
 ```

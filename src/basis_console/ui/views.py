@@ -8,6 +8,7 @@ Pages (all read-only with respect to system state):
   GET  /simulate/examples — sample simulator scenarios (read-only)
   GET  /audit             — Audit Explorer: decision events + gateway evidence (sample data)
   GET  /identity          — Identity & Access Explorer (sample data, read-only)
+  GET  /resources         — Resource Explorer: resources, identifiers, request shapes (sample data)
   GET  /gateway           — Gateway Diagnostics (live gateway health/readiness)
 
 Rendering uses Jinja2 with templates and static assets served locally from this
@@ -46,6 +47,13 @@ from basis_console.identity import (
     future_identity_integrations,
     sample_access_preview,
     sample_identity_preview,
+)
+from basis_console.resources import (
+    IDENTIFIER_EXPLANATION_NOTICE,
+    RESOURCE_BOUNDARY_NOTICE,
+    RESOURCE_SAMPLE_NOTICE,
+    future_resource_integrations,
+    sample_resources,
 )
 from basis_console.sample_data import (
     SAMPLE_DATA_NOTICE,
@@ -103,6 +111,7 @@ _NAV = [
     ("Simulate", "/simulate"),
     ("Audit", "/audit"),
     ("Identity", "/identity"),
+    ("Resources", "/resources"),
     ("Gateway", "/gateway"),
 ]
 
@@ -362,3 +371,35 @@ def gateway_diagnostics(request: Request) -> HTMLResponse:
     ctx = _base_context(request, active="/gateway")
     ctx["diagnostics"] = gather_gateway_diagnostics(client)
     return templates.TemplateResponse(request, "gateway.html", ctx)
+
+
+@router.get(
+    "/resources",
+    response_class=HTMLResponse,
+    summary="Resource Explorer (operational visibility, read-only, sample data)",
+)
+def resources(request: Request) -> HTMLResponse:
+    """Render the Resource Explorer.
+
+    Makes visible what BASIS reasons about — resources, actions, resource
+    identifiers, adapter sources, and gateway request shapes — so operators can
+    see how OT/platform resources become normalized authorization targets. It
+    displays a sample catalog of normalized resources across every current adapter
+    family, each with local and canonical identifiers, supported actions, an
+    example gateway request shape, and a redacted raw payload.
+
+    This is operational visibility, not inventory. The console does not discover
+    devices, connect to OT protocols, call adapters directly, mutate resources,
+    edit policies, call ``basis-core``, or own a resource inventory.
+    ``basis-adapters`` does not yet expose a live resource-inventory service and
+    ``basis-gateway`` does not yet expose a resource-catalog endpoint, so the
+    resources are sample/demo data (labelled as such). Sensitive fields are
+    redacted defensively before display.
+    """
+    ctx = _base_context(request, active="/resources")
+    ctx["notice"] = RESOURCE_SAMPLE_NOTICE
+    ctx["boundary_notice"] = RESOURCE_BOUNDARY_NOTICE
+    ctx["identifier_notice"] = IDENTIFIER_EXPLANATION_NOTICE
+    ctx["resources"] = sample_resources()
+    ctx["future_integrations"] = future_resource_integrations()
+    return templates.TemplateResponse(request, "resources.html", ctx)

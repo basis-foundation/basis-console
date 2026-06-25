@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 10**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, a **Gateway Diagnostics** view, and (new in Phase 10) an **Audit Explorer** that makes authorization decisions and gateway evidence understandable to operators. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 11**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, a **Gateway Diagnostics** view, an **Audit Explorer**, and (new in Phase 11) a **Resource Explorer** that makes visible how OT/platform resources become normalized authorization targets. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 As of Phase 7 the console submits an **adapter/console-normalized** request — a bare action verb, a `resource_type`, and a *local* `resource_id` — and **`basis-gateway` composes** the canonical kernel action (`read:ahu`) and the typed resource id (`ahu:rooftop-1`). The console no longer pre-composes those canonical strings (see [Phase 7](#phase-7-gateway-resource-composition-alignment) below). The verb/resource-type lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
@@ -221,6 +221,26 @@ Console-owned presentation models live in `src/basis_console/audit.py` (`AuditEv
 
 Phase 10 explicitly does **not** add audit storage, persistent history, a database, SIEM integration, a canonical audit schema, policy editing, or a resource explorer, and modifies neither `basis-gateway` nor `basis-core`.
 
+**Phase 11 (Resource Explorer foundation — this phase):**
+
+Phase 11 adds a read-only **Resource Explorer** at `GET /resources` that makes visible what BASIS reasons about — resources, actions, resource identifiers, adapter sources, and gateway request shapes — so operators and contributors can see how OT/platform resources become normalized authorization targets. This is **operational visibility**, not device discovery, inventory management, topology mapping, or live protocol integration. The console **displays resource concepts and authorization targets**; it does **not** discover devices, connect to OT protocols, call adapters directly, mutate resources, edit policies, call `basis-core`, or own a resource inventory.
+
+`basis-adapters` does not yet expose a live resource-inventory service and `basis-gateway` does not yet expose a resource-catalog endpoint, so the Resource Explorer is **sample-backed** and clearly labels its data as illustrative/non-live. No adapter or gateway resource API is invented.
+
+UI areas:
+
+1. **Resource overview** — states plainly that the console displays resource concepts and authorization targets and does not discover devices or own inventory.
+2. **Identifier explanation** — the difference between `local resource_id`, `resource_type`, and the gateway-composed `canonical resource_id`, with the composition flow and the direct typed request shape (`{"action": "read:ahu", "resource_id": "ahu:rooftop-1"}`).
+3. **Resource catalog** — a table of sample normalized resources spanning every current adapter family (BACnet, Modbus, OPC UA, MQTT, DNP3, IEC 61850, KNX, Niagara) plus REST, with display name, type, local/canonical identifiers, protocol family, adapter source, and supported actions.
+4. **Resource detail** (inline, expandable) — Resource, Identifier, Adapter Source, Supported Actions, Gateway Request Preview, and the redacted Raw Resource.
+5. **Gateway request preview** — the preferred normalized shape (bare verb + `resource_type` + local `resource_id`) and the canonical action/resource id the gateway composes from it.
+6. **Use in evaluation** — a link/guidance into the existing simulator (deep-linking a matching sample scenario where one exists, otherwise guiding the operator); it never bypasses the gateway.
+7. **Future live resource integrations** — a clearly-labelled, non-live list: `basis-adapters` resource outputs, a `basis-gateway` resource catalog, `basis-schemas` resource contracts, `basis-identity` subject/resource mapping, `basis-deploy` site inventory, and external CMDB/OT inventory.
+
+Console-owned presentation models live in `src/basis_console/resources.py` (`ResourcePreview`, `ResourceIdentifierPreview`, `ResourceActionPreview`, `AdapterSourcePreview`, plus `GatewayRequestPreview` and `FutureResourceIntegration`). They are named `*Preview` and avoid canonical-ownership names (`Resource`, `CanonicalResource`, `DeviceInventory`, `ResourceStore`): canonical resource contracts belong to a future `basis-schemas`. **Security:** raw resource payloads are run through the shared `basis_console.gateway.redaction` helpers before display, so sensitive fields (`authorization`, `access_token`, `refresh_token`, `id_token`, `client_secret`, `password`, `secret`, cookies, bearer tokens, API keys) are redacted.
+
+Phase 11 explicitly does **not** add device discovery, resource inventory storage, topology mapping, CRUD/mutation, policy authoring, live adapter integrations, `basis-schemas`, or deployment tooling, and modifies none of `basis-adapters`, `basis-gateway`, or `basis-core`.
+
 ---
 
 ## Relationship to the ecosystem
@@ -311,14 +331,15 @@ basis-console/
     identity.py        # Identity & Access Explorer presentation models + SAMPLE data (Phase 8)
     diagnostics.py     # Gateway Diagnostics aggregator / presentation model (Phase 9)
     audit.py           # Audit Explorer presentation models + SAMPLE events (Phase 10)
+    resources.py       # Resource Explorer presentation models + SAMPLE resources (Phase 11)
     vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
     gateway/           # gateway client abstraction (Phases 2 + 4 + 9)
       client.py        #   httpx /health + /ready probes, /v1/evaluate, diagnostic probes
       models.py        #   GatewayStatus + GatewayEvaluationStatus/Result + GatewayProbeResult
       redaction.py     #   defensive redaction of sensitive headers/fields (Phase 9)
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
-    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity, /gateway (HTML)
-    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway + audit)
+    ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity, /resources, /gateway (HTML)
+    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway + audit + resources)
     ui/static/         # locally served CSS (no CDN)
   tests/               # health, routes, config, gateway, simulator, eval tests
   docs/architecture.md # console boundaries and phase notes
