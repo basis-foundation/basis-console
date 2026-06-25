@@ -1,51 +1,180 @@
 {% extends "base.html" %}
-{% block title %}BASIS Console &middot; Audit{% endblock %}
+{% block title %}BASIS Console &middot; Audit Explorer{% endblock %}
 {% block content %}
-  <h1>Audit Viewer</h1>
+  <h1>Audit Explorer</h1>
+
+  {# ── 1. Audit Overview ─────────────────────────────────────────────────── #}
   <p class="lead">
-    Audit events will appear here. Audit records remain evidence, not enforcement.
-    The console displays records produced by <code>basis-core</code> and
-    <code>basis-gateway</code> — it does not produce, supplement, or alter them.
+    Make authorization decisions and gateway evidence understandable: who
+    attempted what, whether it was allowed or denied, which action/resource was
+    involved, what gateway evidence was recorded, and which correlation ID
+    connects the request. The console <strong>displays audit evidence</strong>;
+    it <strong>does not produce canonical audit records</strong>.
   </p>
   <p class="notice">{{ notice }}</p>
+  <p class="notice">{{ boundary_notice }}</p>
 
-  <h2>Recent decision outcomes</h2>
+  {# ── 2. Recent Authorization Events ────────────────────────────────────── #}
+  <h2>Recent authorization events <span class="tag">sample</span></h2>
   <table class="grid">
     <thead>
       <tr>
-        <th>Time</th><th>Subject</th><th>Action</th><th>Resource</th><th>Outcome</th><th>Reason</th>
+        <th>Time</th><th>Outcome</th><th>Subject</th><th>Action</th>
+        <th>Resource</th><th>Policy</th><th>Correlation</th><th>Source</th>
       </tr>
     </thead>
     <tbody>
-      {% for d in decisions %}
+      {% for e in events %}
         <tr>
-          <td class="mono">{{ d.timestamp }}</td>
-          <td>{{ d.subject_id }}</td>
-          <td class="mono">{{ d.action }}</td>
-          <td class="mono">{{ d.resource_id }}</td>
-          <td><span class="outcome {{ d.outcome }}">{{ d.outcome }}</span></td>
-          <td>{{ d.reason }}</td>
+          <td class="mono">{{ e.timestamp }}</td>
+          <td><span class="outcome {{ e.outcome }}">{{ e.outcome }}</span></td>
+          <td>{{ e.subject_id }}</td>
+          <td class="mono">{{ e.action }}</td>
+          <td class="mono">{{ e.resource_id }}</td>
+          <td>{{ e.decision.policy_name or "—" }}</td>
+          <td class="mono">{{ e.correlation_id }}</td>
+          <td>{{ e.source }}</td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <h2>Audit records</h2>
+  {# ── 3. Event Detail View (inline) ─────────────────────────────────────── #}
+  <h2>Event detail</h2>
+  <p class="muted">
+    Each event expands into structured detail: decision, subject, action,
+    resource, policy, gateway evidence, correlation, and the raw event.
+  </p>
   {% for e in events %}
-    <article class="record">
-      <div class="record-head">
-        <span class="record-title mono">{{ e.event_id }}</span>
+    <details class="record audit-event" {% if loop.first %}open{% endif %}>
+      <summary>
         <span class="outcome {{ e.outcome }}">{{ e.outcome }}</span>
-      </div>
+        <span class="mono">{{ e.action }}</span> on <span class="mono">{{ e.resource_id }}</span>
+        <span class="muted">&middot; {{ e.event_id }}</span>
+      </summary>
+
+      <h3>Decision</h3>
       <dl class="kv">
-        <dt>Type</dt><dd><code>{{ e.event_type }}</code></dd>
-        <dt>Correlation</dt><dd class="mono">{{ e.correlation_id }}</dd>
-        <dt>Subject</dt><dd>{{ e.subject_id }} ({{ e.subject_roles | join(", ") }})</dd>
-        <dt>Action</dt><dd><code>{{ e.action }}</code> on <code>{{ e.resource_id }}</code></dd>
-        <dt>Reason</dt><dd>{{ e.reason }}</dd>
-        <dt>Evaluated by</dt><dd>{{ e.evaluated_by }} &middot; policy {{ e.policy_version }}</dd>
-        <dt>Time</dt><dd class="mono">{{ e.timestamp }}</dd>
+        <dt>Outcome</dt><dd><span class="outcome {{ e.outcome }}">{{ e.outcome }}</span></dd>
+        <dt>Reason</dt><dd>{{ e.decision.reason }}</dd>
+        <dt>Timestamp</dt><dd class="mono">{{ e.timestamp }}</dd>
       </dl>
-    </article>
+
+      <h3>Subject</h3>
+      <dl class="kv">
+        <dt>Subject ID</dt><dd>{{ e.subject_id }}</dd>
+        <dt>Type</dt><dd>{{ e.subject_type }}</dd>
+        <dt>Roles</dt>
+        <dd>
+          {% for role in e.subject_roles %}<code>{{ role }}</code>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none</span>{% endfor %}
+        </dd>
+      </dl>
+
+      <h3>Action</h3>
+      <dl class="kv">
+        <dt>Action</dt><dd class="mono">{{ e.action }}</dd>
+      </dl>
+
+      <h3>Resource</h3>
+      <dl class="kv">
+        <dt>Resource ID</dt><dd class="mono">{{ e.resource_id }}</dd>
+        <dt>Resource type</dt><dd>{% if e.resource_type %}<code>{{ e.resource_type }}</code>{% else %}<span class="muted">— (direct request; already typed)</span>{% endif %}</dd>
+      </dl>
+
+      <h3>Policy</h3>
+      <dl class="kv">
+        <dt>Policy name</dt><dd>{{ e.decision.policy_name or "—" }}</dd>
+        <dt>Policy version</dt><dd class="mono">{{ e.decision.policy_version or "—" }}</dd>
+      </dl>
+
+      {# ── 4. Gateway Evidence Panel ──────────────────────────────────────── #}
+      <h3>Gateway evidence</h3>
+      {% if e.evidence.present %}
+        <p class="muted">
+          Composition evidence the gateway recorded under reserved
+          <code>basis_gateway.*</code> keys while deriving the canonical action /
+          resource id. The console only reads this; it never sets it.
+        </p>
+        <dl class="kv">
+          {% for key, value in e.evidence.entries %}
+            <dt class="mono">{{ key }}</dt><dd class="mono">{{ value }}</dd>
+          {% endfor %}
+        </dl>
+      {% else %}
+        <p class="muted">
+          No gateway composition evidence — this request was already in canonical
+          form (a direct, fully-typed action and resource), so the gateway
+          composed nothing.
+        </p>
+      {% endif %}
+
+      {# ── 5. Correlation ──────────────────────────────────────────────────── #}
+      <h3>Correlation</h3>
+      <dl class="kv">
+        <dt>Correlation ID</dt><dd class="mono">{{ e.correlation_id }}</dd>
+      </dl>
+
+      <h3>Raw event <span class="tag">redacted</span></h3>
+      <pre class="json"><code>{{ e.raw_json }}</code></pre>
+    </details>
   {% endfor %}
+
+  {# ── 5b. Correlation ID Visibility ─────────────────────────────────────── #}
+  <section class="boundary">
+    <h3>Why correlation IDs matter</h3>
+    <p>
+      A correlation ID connects a single request across the system: the original
+      request, the gateway response, the recorded audit evidence, and operator
+      troubleshooting. The gateway generates it and returns it on the
+      <code>X-Correlation-ID</code> response header. The console never fabricates
+      correlation IDs — the sample events above carry clearly-sample IDs, and live
+      IDs come from the gateway.
+    </p>
+  </section>
+
+  {# ── 6. Evaluation Result Integration ──────────────────────────────────── #}
+  <section class="status-panel">
+    <h2>See live decision evidence</h2>
+    <p>
+      Because <code>basis-gateway</code> does not yet expose an audit-history
+      endpoint, the events above are sample data. To see <em>live</em> decision
+      and composition evidence today, run a request through the
+      <a href="/simulate">Decision Simulator</a>: when gateway evaluation is
+      configured it returns the real decision, the
+      <code>basis_gateway.*</code> composition evidence, and the correlation ID —
+      shaped exactly like the detail above.
+    </p>
+    {% if gateway_eval_enabled %}
+      <p class="notice ok-notice">
+        Gateway evaluation is configured — submit a request on the Simulate page to
+        produce a live decision with real correlation and evidence.
+      </p>
+    {% else %}
+      <p class="notice">
+        Gateway evaluation is not configured. Set <code>GATEWAY_BASE_URL</code> and
+        a server-side bearer token to produce live decisions on the Simulate page.
+      </p>
+    {% endif %}
+    <p class="muted">
+      When a gateway audit-history endpoint exists, this page will list real past
+      decisions here. The console will consume that endpoint; it will not store the
+      records itself.
+    </p>
+  </section>
+
+  {# ── 7. Future Integration Panel ───────────────────────────────────────── #}
+  <section class="boundary">
+    <h2>Future live audit integrations <span class="tag">future &middot; not live</span></h2>
+    <p>
+      These sources are <strong>not</strong> implemented in this view. Live audit
+      history will eventually be sourced and governed by other BASIS components;
+      the console will render and explain it, never own or store it, and never
+      replace SIEM/log infrastructure.
+    </p>
+    <dl class="kv future-list">
+      {% for item in future_integrations %}
+        <dt>{{ item.name }}</dt><dd>{{ item.description }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
 {% endblock %}

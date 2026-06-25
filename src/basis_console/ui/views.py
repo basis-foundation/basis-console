@@ -6,7 +6,7 @@ Pages (all read-only with respect to system state):
   GET  /simulate          — decision-simulator request builder (Phase 3)
   POST /simulate          — validate input + render a normalized request preview
   GET  /simulate/examples — sample simulator scenarios (read-only)
-  GET  /audit             — audit viewer placeholder (sample data, read-only)
+  GET  /audit             — Audit Explorer: decision events + gateway evidence (sample data)
   GET  /identity          — Identity & Access Explorer (sample data, read-only)
   GET  /gateway           — Gateway Diagnostics (live gateway health/readiness)
 
@@ -32,6 +32,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from basis_console.audit import (
+    AUDIT_BOUNDARY_NOTICE,
+    AUDIT_SAMPLE_NOTICE,
+    future_audit_integrations,
+    sample_audit_events,
+)
 from basis_console.diagnostics import gather_gateway_diagnostics
 from basis_console.gateway import GatewayClient, GatewayStatusReport
 from basis_console.identity import (
@@ -43,8 +49,6 @@ from basis_console.identity import (
 )
 from basis_console.sample_data import (
     SAMPLE_DATA_NOTICE,
-    sample_audit_events,
-    sample_decisions,
     sample_policies,
     sample_simulator_scenarios,
 )
@@ -275,12 +279,32 @@ def simulate_examples(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "examples.html", ctx)
 
 
-@router.get("/audit", response_class=HTMLResponse, summary="Audit viewer (read-only)")
+@router.get(
+    "/audit",
+    response_class=HTMLResponse,
+    summary="Audit Explorer (audit evidence, read-only, sample data)",
+)
 def audit(request: Request) -> HTMLResponse:
+    """Render the Audit Explorer.
+
+    Displays recent authorization-decision events with structured detail —
+    subject, action, resource, policy, gateway composition evidence, and
+    correlation IDs — plus a clearly-labelled list of future live audit sources.
+
+    This is operational visibility, not an audit store. The console displays audit
+    *evidence* produced by ``basis-core`` and ``basis-gateway``; it does not
+    produce, store, or own canonical audit records, define audit semantics, or
+    call ``basis-core``. ``basis-gateway`` does not yet expose an audit-history
+    endpoint, so the events are sample/demo data (labelled as such); live
+    evaluation evidence is visible on the Simulate page. Sensitive fields are
+    redacted defensively before display.
+    """
     ctx = _base_context(request, active="/audit")
-    ctx["notice"] = SAMPLE_DATA_NOTICE
-    ctx["decisions"] = sample_decisions()
+    ctx["notice"] = AUDIT_SAMPLE_NOTICE
+    ctx["boundary_notice"] = AUDIT_BOUNDARY_NOTICE
     ctx["events"] = sample_audit_events()
+    ctx["future_integrations"] = future_audit_integrations()
+    ctx["gateway_eval_enabled"] = _gateway_client(request).evaluation_enabled
     return templates.TemplateResponse(request, "audit.html", ctx)
 
 

@@ -287,6 +287,24 @@ code {
 .future-list { margin-top: 0.75rem; }
 .future-list dt { color: var(--text); font-weight: 600; }
 
+/* Audit Explorer (Phase 10). */
+details.audit-event { padding: 0.75rem 1.1rem; }
+details.audit-event summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+details.audit-event summary .outcome { margin-right: 0.25rem; }
+details.audit-event h3 {
+  margin: 1rem 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .footer {
   display: flex;
   justify-content: space-between;
