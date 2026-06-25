@@ -40,8 +40,8 @@
       </p>
     {% elif gateway.status.value == "ready" %}
       <p class="notice ok-notice">
-        Gateway is reachable and reports ready. The console still consumes no
-        live policy or audit APIs in this phase.
+        Gateway is reachable and reports ready. The console does not yet consume
+        live policy or audit APIs.
       </p>
     {% elif gateway.status.value == "reachable" %}
       <p class="notice warn-notice">
