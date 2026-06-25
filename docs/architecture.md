@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–9)
+# basis-console — Architecture Notes (Phases 1–10)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -500,6 +500,65 @@ Explorer). Phase 9 deliberately excludes packet capture, proxy/traffic
 inspection, an audit/resource explorer, policy editing, deployment tooling, and
 any modification to `basis-gateway` or `basis-core`.
 
+## Phase 10 Audit Explorer
+
+Phase 10 turns the placeholder audit viewer into an **Audit Explorer**
+(`GET /audit`) that makes authorization decisions and gateway evidence
+understandable. It is observability only and introduces no new boundary.
+
+```
+basis-console observes, inspects, submits, and explains.
+basis-core and basis-gateway produce and own audit semantics/records.
+```
+
+### What the Audit Explorer does and does not own
+
+- **Displays evidence; does not store it.** The view renders audit *evidence*
+  (decision, subject, action, resource, policy, gateway composition evidence,
+  correlation). It is **not** an audit store, defines **no** audit schema, and
+  does **not** replace SIEM/log infrastructure. Canonical audit records belong to
+  `basis-core` and `basis-gateway`.
+- **No evaluation, no `basis-core`.** Invariants #1 and #5 hold: the page makes no
+  decision, runs no policy logic, and imports no `basis-core`. Outcomes shown are
+  relayed sample/evaluation evidence, never computed by the console.
+- **No invented endpoint, honest about live vs sample.** `basis-gateway` does not
+  yet expose an audit-history endpoint, so the recent-events list is clearly
+  labelled **sample** data with obviously-sample correlation IDs. The console does
+  not invent a gateway audit endpoint and adds no database or persistent history.
+  Live decision + composition evidence is reachable today via the Simulate page,
+  which the Audit Explorer links to (and which links back).
+
+### Presentation models and naming
+
+Console-owned models live in `basis_console.audit`: `AuditEventPreview`,
+`AuditDecisionPreview`, `AuditEvidencePreview`, and `FutureAuditIntegration`.
+They are named `*Preview` and deliberately avoid canonical-ownership names
+(`AuditEvent`, `CanonicalAuditRecord`, `GatewayAuditStore`) — the console is not
+the authority for the audit contract. The gateway evidence panel uses the **real**
+reserved `basis_gateway.*` keys (`action_composed`, `original_action`,
+`composed_action`, `resource_type`, `resource_composed`, `original_resource_id`,
+`composed_resource_id`) so the displayed evidence matches what the gateway
+actually records; the console only reads these keys and never sets them.
+
+### Redaction
+
+Raw event payloads are passed through `basis_console.gateway.redaction`
+(`redact_json`) before display, so credential-shaped fields (`authorization`,
+`access_token`, `refresh_token`, `id_token`, `client_secret`, `password`,
+`secret`, cookies, bearer tokens, API keys) are redacted defensively. The sample
+data includes a credential-shaped field specifically to exercise this path; a
+bearer token or raw `Authorization` header is never rendered.
+
+### Future live audit sources
+
+Live audit history will eventually be sourced and governed elsewhere — a
+`basis-gateway` audit-history endpoint, the `basis-core` audit event schema,
+`basis-schemas` audit contracts, `basis-identity` lifecycle events, and optionally
+an external SIEM/log pipeline. The Audit Explorer lists these as **future,
+non-live** integrations. Phase 10 implements none of them and adds no audit
+storage, persistent history, canonical schema, SIEM integration, policy editing,
+or resource explorer, and modifies neither `basis-gateway` nor `basis-core`.
+
 ## How the console reflects these boundaries
 
 - **No `basis-core` dependency.** `pyproject.toml` does not depend on
@@ -548,7 +607,7 @@ logic or cached decisions as a substitute. The Phase 1 readiness model
 (`readiness.py`) is structured to add components such as `gateway_reachable`
 later without changing the contract.
 
-## Endpoints (Phases 1–9)
+## Endpoints (Phases 1–10)
 
 | Method | Path                 | Type | Purpose                                                       |
 | ------ | -------------------- | ---- | ------------------------------------------------------------- |
@@ -559,7 +618,7 @@ later without changing the contract.
 | GET    | `/simulate`          | HTML | Decision-simulator request builder (optional `?example=`).   |
 | POST   | `/simulate`          | HTML | Preview mode: validate + render request shape. Gateway mode (`mode=gateway`): forward to gateway `/v1/evaluate` and display the response.|
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
-| GET    | `/audit`             | HTML | Audit viewer placeholder (sample data, read-only).           |
+| GET    | `/audit`             | HTML | Audit Explorer — decision events + gateway evidence (sample data, read-only). |
 | GET    | `/identity`          | HTML | Identity & Access Explorer (sample data, read-only).        |
 | GET    | `/gateway`           | HTML | Gateway Diagnostics — live gateway health/readiness (read-only). |
 ```

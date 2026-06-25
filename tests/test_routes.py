@@ -39,8 +39,9 @@ def test_audit_page_renders(client):
     response = client.get("/audit")
     assert response.status_code == 200
     assert _is_html(response)
-    assert "Audit events will appear here" in response.text
-    assert "evidence, not enforcement" in response.text
+    assert "Audit Explorer" in response.text
+    # The console displays audit evidence; it does not own canonical records.
+    assert "does not produce canonical audit records" in response.text
 
 
 def test_static_css_served_locally(client):

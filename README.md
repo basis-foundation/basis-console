@@ -2,7 +2,7 @@
 
 `basis-console` is a human-facing operational interface for the BASIS ecosystem. It gives operators read-only visibility into policy state, authorization decisions, and audit activity, and it establishes the interaction patterns that later phases will connect to live data through `basis-gateway`.
 
-This repository is at **Phase 9**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, and (new in Phase 9) a **Gateway Diagnostics** view that gives operators live visibility into gateway health, readiness, capability, and correlation IDs. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
+This repository is at **Phase 10**: the read-only skeleton, the gateway connection-status display, the **decision-simulator request builder**, an optional **gateway-backed simulation** path, structured action construction, alignment with gateway-owned action/resource composition, an operator-facing **Identity & Access Explorer**, a **Gateway Diagnostics** view, and (new in Phase 10) an **Audit Explorer** that makes authorization decisions and gateway evidence understandable to operators. The simulator always supports preview mode (validate input, render the normalized request shape, no gateway call). When a gateway base URL and a server-side Bearer token are configured, it can additionally submit the request to `basis-gateway`'s `POST /v1/evaluate` and display the gateway's decision verbatim. The console **never evaluates decisions itself**, never imports `basis-core`, and never reinterprets the gateway's response — it relays it. Subject identity for live evaluation comes from the gateway's verified token, never from the form.
 
 As of Phase 7 the console submits an **adapter/console-normalized** request — a bare action verb, a `resource_type`, and a *local* `resource_id` — and **`basis-gateway` composes** the canonical kernel action (`read:ahu`) and the typed resource id (`ahu:rooftop-1`). The console no longer pre-composes those canonical strings (see [Phase 7](#phase-7-gateway-resource-composition-alignment) below). The verb/resource-type lists live in a small, explicitly **provisional** console-local vocabulary bridge (`basis_console.vocabulary`) that the console is **not** the authority for — the authoritative home is a future `basis-schemas` package (see [Future `basis-schemas` extraction](#future-basis-schemas-extraction)).
 
@@ -201,6 +201,26 @@ The gateway client gains two diagnostic probes, `get_health()` and `get_ready()`
 
 **Future identity diagnostics** (OIDC discovery, JWKS, JWT inspection) will integrate through the future `basis-identity` service, not through console-owned protocol logic. Phase 9 does **not** add packet capture, proxy/traffic sniffing, deployment tooling, policy editing, an audit/resource explorer, authentication, or any identity protocol, and modifies neither `basis-gateway` nor `basis-core`.
 
+**Phase 10 (Audit Explorer — this phase):**
+
+Phase 10 turns the placeholder audit viewer into an **Audit Explorer** at `GET /audit` that makes authorization decisions and gateway evidence understandable. It answers: who attempted what, was it allowed or denied, which action/resource was involved, what gateway evidence was recorded, and what correlation ID connects the request. This is **operational visibility**, not an audit storage system. The console **displays audit evidence** produced by `basis-core` and `basis-gateway`; it does **not** authenticate, authorize, evaluate, store canonical audit records, own audit semantics, define an audit schema, replace SIEM/log infrastructure, or call `basis-core`.
+
+`basis-gateway` does not yet expose an audit-history endpoint, so the Audit Explorer is **sample-backed and evaluation-result-aware**, and is honest about what is live versus sample: the recent-events list is clearly-labelled demo data with obviously-sample correlation IDs, and the page links to the Simulate page where **live** decision + composition evidence + correlation IDs are produced today. No audit endpoint is invented; no database or persistent history is added.
+
+UI panels:
+
+1. **Audit overview** — states plainly that the console displays evidence and does not produce canonical records.
+2. **Recent authorization events** — a table of decision events (timestamp, outcome, subject, action, resource, policy, correlation ID, source).
+3. **Event detail** (inline, expandable) — Decision, Subject, Action, Resource, Policy, Gateway Evidence, Correlation, and the Raw Event.
+4. **Gateway evidence** — the real reserved `basis_gateway.*` composition-evidence keys (`action_composed`, `original_action`, `composed_action`, `resource_type`, `resource_composed`, `original_resource_id`, `composed_resource_id`) when present; a clear "no composition evidence" state for direct/already-typed requests.
+5. **Correlation IDs** — shown per event and explained: a correlation ID connects request → gateway response → audit evidence → operator troubleshooting. The console never fabricates correlation IDs.
+6. **Evaluation-result integration** — a path from the Audit Explorer to the Simulator (and a link back from the simulator's gateway response) so live decision evidence is reachable, plus a static explanation of how a future gateway audit-history endpoint will populate the page.
+7. **Future live audit integrations** — a clearly-labelled, non-live list: `basis-gateway` audit-history endpoint, `basis-core` audit event schema, `basis-schemas` audit contracts, `basis-identity` lifecycle events, and external SIEM/log pipelines.
+
+Console-owned presentation models live in `src/basis_console/audit.py` (`AuditEventPreview`, `AuditDecisionPreview`, `AuditEvidencePreview`, plus `FutureAuditIntegration`). They are named `*Preview` and avoid canonical-ownership names (`AuditEvent`, `CanonicalAuditRecord`, `GatewayAuditStore`): canonical audit types belong to `basis-core` / `basis-gateway` / `basis-schemas`. **Security:** raw event payloads are run through the shared `basis_console.gateway.redaction` helpers before display, so sensitive fields (`authorization`, `access_token`, `refresh_token`, `id_token`, `client_secret`, `password`, `secret`, cookies, bearer tokens, API keys) are redacted — bearer tokens and raw `Authorization` headers are never displayed.
+
+Phase 10 explicitly does **not** add audit storage, persistent history, a database, SIEM integration, a canonical audit schema, policy editing, or a resource explorer, and modifies neither `basis-gateway` nor `basis-core`.
+
 ---
 
 ## Relationship to the ecosystem
@@ -290,6 +310,7 @@ basis-console/
     simulator.py       # decision-simulator validation + preview builder (Phases 3 + 6)
     identity.py        # Identity & Access Explorer presentation models + SAMPLE data (Phase 8)
     diagnostics.py     # Gateway Diagnostics aggregator / presentation model (Phase 9)
+    audit.py           # Audit Explorer presentation models + SAMPLE events (Phase 10)
     vocabulary.py      # provisional console-local action vocabulary bridge (Phase 6)
     gateway/           # gateway client abstraction (Phases 2 + 4 + 9)
       client.py        #   httpx /health + /ready probes, /v1/evaluate, diagnostic probes
@@ -297,7 +318,7 @@ basis-console/
       redaction.py     #   defensive redaction of sensitive headers/fields (Phase 9)
     api/routes.py      # /health, /ready (JSON, incl. gateway state)
     ui/views.py        # /, /policies, /simulate (GET+POST), /audit, /identity, /gateway (HTML)
-    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway)
+    ui/templates/      # Jinja2 templates (incl. simulate + examples + identity + gateway + audit)
     ui/static/         # locally served CSS (no CDN)
   tests/               # health, routes, config, gateway, simulator, eval tests
   docs/architecture.md # console boundaries and phase notes
