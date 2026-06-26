@@ -156,17 +156,40 @@ decision of its own.
 
 ## Screenshots
 
-> _Screenshots are pending for the `v0.1.0` release. Add operator-facing captures
-> of the Home, Operator Workspace, Decision Simulator, and Gateway Diagnostics
-> pages here (for example under `docs/images/`). Until then, run the console
-> locally with `make run` to see each page._
+Captures of the `v0.1.0` release-candidate interface, running in sample-only
+mode.
 
-<!--
+### Home / status
+
 ![Home / status](docs/images/home.png)
+
+### Operator Workspace
+
 ![Operator Workspace](docs/images/workspace.png)
-![Decision Simulator](docs/images/simulate.png)
+
+### Gateway Diagnostics
+
 ![Gateway Diagnostics](docs/images/gateway.png)
--->
+
+### Decision Simulator
+
+![Decision Simulator](docs/images/simulate.png)
+
+### Audit Explorer
+
+![Audit Explorer](docs/images/audit.png)
+
+### Identity & Access Explorer
+
+![Identity & Access Explorer](docs/images/identity.png)
+
+### Resource Explorer
+
+![Resource Explorer](docs/images/resources.png)
+
+### Policy Viewer
+
+![Policy Viewer](docs/images/policies.png)
 
 ---
 

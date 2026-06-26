@@ -42,8 +42,9 @@ coupling to `basis-core`.
 
 ## Screenshots
 
-- [ ] Screenshots reviewed (README "Screenshots" section) — placeholders replaced
-      or the section honestly states they are pending; no stale/misleading images.
+- [ ] Screenshots reviewed (README "Screenshots" section) — the section contains
+      the actual `docs/images/*.png` captures (no placeholders); image paths are
+      relative and resolve; no stale/misleading images.
 
 ## Smoke Tests
 
