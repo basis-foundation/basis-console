@@ -92,6 +92,11 @@ make run
 **Gateway mode.** `GATEWAY_BASE_URL` points at a `basis-gateway` instance. The
 home page, Operator Workspace, and Gateway Diagnostics reflect live gateway
 health/readiness, probed only via the gateway's `GET /health` and `GET /ready`.
+Gateway Diagnostics additionally shows per-probe response latency, the last
+successful check, a connection-state glossary, and a clear next step; the same
+connection state (`not_configured` / `unreachable` / `error` / `reachable` /
+`ready`) is labelled consistently on the home page, the workspace, and the
+diagnostics page. Timeouts are reported distinctly from other unreachable causes.
 
 ```bash
 GATEWAY_BASE_URL=http://127.0.0.1:8000 make run
@@ -99,11 +104,14 @@ GATEWAY_BASE_URL=http://127.0.0.1:8000 make run
 
 **Live evaluation mode.** `GATEWAY_BASE_URL` **and** `GATEWAY_BEARER_TOKEN` are
 set. The Decision Simulator can additionally submit to the gateway's
-`POST /v1/evaluate` and display the decision verbatim. A bearer token is required
-because the gateway derives the subject identity from the verified token and
-rejects unauthenticated calls; obtain one out-of-band — the console does no OIDC
-login and issues no tokens. When the token is absent, the simulator stays
-preview-only and says so.
+`POST /v1/evaluate` and display the decision verbatim, with a plain explanation of
+each outcome category (allow, deny/not-applicable, unauthorized, validation error,
+unavailable/timeout, gateway error), the policy version and correlation ID when
+returned (and an explicit "not returned by the gateway" when not), and the raw
+redacted response. A bearer token is required because the gateway derives the
+subject identity from the verified token and rejects unauthenticated calls; obtain
+one out-of-band — the console does no OIDC login and issues no tokens. When the
+token is absent, the simulator stays preview-only and says so.
 
 ```bash
 GATEWAY_BASE_URL=http://127.0.0.1:8000 \

@@ -83,6 +83,9 @@
     <p class="notice {% if diagnostics.connection_state == 'ready' %}ok-notice{% elif diagnostics.connection_state in ('unreachable', 'error') %}warn-notice{% endif %}">
       {{ diagnostics.connection_summary }}
     </p>
+    {% if diagnostics.next_step %}
+      <p class="muted"><strong>Next step:</strong> {{ diagnostics.next_step }}</p>
+    {% endif %}
     <p><a href="/gateway">Open full Gateway Diagnostics &rarr;</a></p>
   </section>
 

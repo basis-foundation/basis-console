@@ -47,6 +47,75 @@ POLICY_NOT_EXPOSED_NOTICE = (
     "decision is returned). The console does not invent a policy endpoint."
 )
 
+# Reassurance shown next to the raw-response viewer, stating plainly that the
+# console never sends its bearer token to the probed endpoints and redacts
+# credential-shaped values before anything is stored or rendered.
+REDACTION_ASSURANCE_NOTICE = (
+    "The console sends no credentials to /health or /ready — the configured bearer "
+    "token is used only on /v1/evaluate. As a second layer, header names and JSON "
+    "keys that look like credentials (authorization, tokens, cookies, secrets, "
+    "api keys) are redacted defensively before any value is captured or displayed."
+)
+
+
+@dataclass(frozen=True)
+class ConnectionStateGuide:
+    """One row of the connection-state glossary: a state, its meaning, next step."""
+
+    state: str
+    meaning: str
+    next_step: str
+
+
+# What each connection state means and the next step an operator can take. Shown
+# as a small glossary on the diagnostics view so the state badge is never opaque.
+# The next-step text per state is also surfaced inline as ``next_step`` below.
+_STATE_GUIDE: tuple[ConnectionStateGuide, ...] = (
+    ConnectionStateGuide(
+        state="not_configured",
+        meaning=(
+            "No GATEWAY_BASE_URL is set. The console runs in sample-only mode and "
+            "makes no gateway calls."
+        ),
+        next_step="Set GATEWAY_BASE_URL to a running basis-gateway to see live state.",
+    ),
+    ConnectionStateGuide(
+        state="unreachable",
+        meaning=(
+            "A base URL is set but the gateway could not be contacted — connection "
+            "refused, DNS failure, or a timeout."
+        ),
+        next_step="Confirm the gateway is running and reachable at the configured URL.",
+    ),
+    ConnectionStateGuide(
+        state="error",
+        meaning="The gateway answered but /health returned an unexpected, non-200 status.",
+        next_step="Check the gateway's own health and logs; it is up but reports unhealthy.",
+    ),
+    ConnectionStateGuide(
+        state="reachable",
+        meaning=(
+            "/health is OK but /ready is not 200 — the gateway is up but not reporting ready."
+        ),
+        next_step="Inspect the readiness components below to see what is not ready.",
+    ),
+    ConnectionStateGuide(
+        state="ready",
+        meaning="Both /health and /ready answered successfully — the gateway is up and ready.",
+        next_step=(
+            "No action needed. Use the Simulate page for live evaluation when a "
+            "bearer token is configured."
+        ),
+    ),
+)
+
+_NEXT_STEP_BY_STATE: dict[str, str] = {guide.state: guide.next_step for guide in _STATE_GUIDE}
+
+
+def connection_state_guide() -> tuple[ConnectionStateGuide, ...]:
+    """Return the connection-state glossary (state, meaning, next step)."""
+    return _STATE_GUIDE
+
 
 @dataclass(frozen=True)
 class ReadinessComponent:
@@ -97,12 +166,15 @@ class GatewayDiagnostics:
     checked_at: str
     connection_state: str
     connection_summary: str
+    next_step: str
     health: GatewayProbeResult
     ready: GatewayProbeResult
     components: tuple[ReadinessComponent, ...]
     overall_ready: bool | None
     policy: PolicyCapability
     correlation_ids: tuple[CorrelationEntry, ...]
+    last_successful_health: str | None = None
+    last_successful_ready: str | None = None
     health_json: str | None = None
     ready_json: str | None = None
     health_headers: dict[str, str] = field(default_factory=dict)
@@ -170,6 +242,13 @@ def _connection_state(
             "console at a basis-gateway instance.",
         )
     if not health.reached:
+        if health.timed_out:
+            return (
+                "unreachable",
+                "The gateway is configured but did not respond within the timeout. "
+                "The console surfaces no live state and never falls back to local "
+                "authorization.",
+            )
         return (
             "unreachable",
             "The gateway is configured but could not be contacted. The console "
@@ -238,12 +317,15 @@ def gather_gateway_diagnostics(client: GatewayClient) -> GatewayDiagnostics:
         checked_at=health.checked_at or ready.checked_at,
         connection_state=state,
         connection_summary=summary,
+        next_step=_NEXT_STEP_BY_STATE.get(state, ""),
         health=health,
         ready=ready,
         components=components,
         overall_ready=overall_ready,
         policy=policy,
         correlation_ids=correlation_ids,
+        last_successful_health=health.checked_at if health.ok else None,
+        last_successful_ready=ready.checked_at if ready.ok else None,
         health_json=_pretty(health.response_json),
         ready_json=_pretty(ready.response_json),
         health_headers=health.headers,

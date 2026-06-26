@@ -40,7 +40,11 @@ from basis_console.audit import (
     future_audit_integrations,
     sample_audit_events,
 )
-from basis_console.diagnostics import gather_gateway_diagnostics
+from basis_console.diagnostics import (
+    REDACTION_ASSURANCE_NOTICE,
+    connection_state_guide,
+    gather_gateway_diagnostics,
+)
 from basis_console.gateway import GatewayClient, GatewayStatusReport
 from basis_console.identity import (
     IDENTITY_BOUNDARY_NOTICE,
@@ -414,6 +418,8 @@ def gateway_diagnostics(request: Request) -> HTMLResponse:
     client = _gateway_client(request)
     ctx = _base_context(request, active="/gateway")
     ctx["diagnostics"] = gather_gateway_diagnostics(client)
+    ctx["state_guide"] = connection_state_guide()
+    ctx["redaction_assurance"] = REDACTION_ASSURANCE_NOTICE
     return templates.TemplateResponse(request, "gateway.html", ctx)
 
 

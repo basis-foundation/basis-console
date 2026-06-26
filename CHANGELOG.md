@@ -49,6 +49,13 @@ records, or own resource inventory.
   evaluation. Both are optional, server-side configuration.
 - **Defensive redaction** of credential-shaped fields/headers before display
   (`basis_console.gateway.redaction`).
+- **Live gateway integration polish** — Gateway Diagnostics shows per-probe
+  response latency, last-successful timestamps, a connection-state glossary, and a
+  concrete next step; the connection state is labelled consistently across the home
+  page, the workspace, and diagnostics; timeouts are distinguished from other
+  unreachable causes; and the Decision Simulator explains each evaluation outcome
+  category and states plainly when the gateway returns no correlation ID or policy
+  version. Display only — no new endpoints, pages, or evaluation behavior.
 - **Explicit architectural boundaries** documented throughout: the console does
   not evaluate, authenticate, own identity/audit/inventory, parse protocols, or
   call `basis-core`, and reaches the system only through the gateway.
