@@ -61,11 +61,17 @@ Verify:
 
 - [ ] **Gateway Diagnostics** (`/gateway`) shows the gateway as configured and
       reachable/ready, with health, readiness components, and correlation IDs.
-- [ ] **Home** (`/`) reflects the gateway connection state (`reachable` / `ready`).
+- [ ] **Gateway Diagnostics** also shows per-probe **response latency**, a **last
+      successful** timestamp, a **next step**, and the **connection-state glossary**
+      (expand "What these connection states mean").
+- [ ] **Home** (`/`) reflects the gateway connection state (`reachable` / `ready`)
+      and links to Gateway Diagnostics and the Workspace; the **same state label**
+      appears on all three pages.
 - [ ] **Workspace** (`/workspace`) readiness snapshot reflects the live gateway
-      state.
+      state and shows the matching **next step**.
 - [ ] If the gateway is then stopped, the console shows an honest **unreachable**
-      state and does **not** fall back to any local authorization behavior.
+      state and does **not** fall back to any local authorization behavior. If the
+      gateway is slow/unresponsive, a **timeout** is reported distinctly.
 - [ ] All other pages from section 1 still load.
 
 ## 3. Live evaluation mode (`GATEWAY_BEARER_TOKEN` required)
@@ -88,8 +94,12 @@ Verify:
       token.
 - [ ] **With** a token: the Simulate page offers gateway-evaluation mode.
       Submitting with `mode=gateway` displays the gateway's decision verbatim
-      (outcome, HTTP status, reason, policy version, correlation ID, raw JSON) and,
-      when present, the gateway composition evidence.
+      (outcome, HTTP status, reason, policy version, correlation ID, raw JSON), a
+      plain-language explanation of the outcome category, and — when present — the
+      gateway composition evidence. When the gateway returns no correlation ID or
+      policy version, the page says "not returned by the gateway" rather than
+      hiding the field. Error outcomes (unauthorized / validation / unavailable /
+      timeout) each show a clear, distinct explanation.
 - [ ] The token is never displayed, logged, or rendered anywhere in the UI.
 - [ ] The form's subject fields are labelled preview-only; live evaluation sends
       no subject (identity comes from the token).

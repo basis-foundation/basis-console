@@ -207,13 +207,20 @@
             Returned by <code>basis-gateway</code>. The console relays this
             response as-is; it does not make or reinterpret the decision.
           </p>
+          {% if evaluation.explanation %}
+            <p class="notice {% if evaluation.status.value == 'success' %}ok-notice{% elif evaluation.status.value in ('unauthorized', 'validation_error', 'unavailable', 'gateway_error') %}warn-notice{% endif %}">
+              {{ evaluation.explanation }}
+            </p>
+          {% endif %}
           <dl class="kv">
             {% if evaluation.http_status %}<dt>HTTP status</dt><dd class="mono">{{ evaluation.http_status }}</dd>{% endif %}
             {% if evaluation.outcome %}<dt>Decision</dt><dd><span class="outcome {{ evaluation.outcome }}">{{ evaluation.outcome }}</span></dd>{% endif %}
             {% if evaluation.reason %}<dt>Reason</dt><dd>{{ evaluation.reason }}</dd>{% endif %}
             {% if evaluation.error_code %}<dt>Error</dt><dd>{{ evaluation.error_code }}{% if evaluation.error_message %} — {{ evaluation.error_message }}{% endif %}</dd>{% endif %}
-            {% if evaluation.policy_version %}<dt>Policy version</dt><dd class="mono">{{ evaluation.policy_version }}</dd>{% endif %}
-            {% if evaluation.correlation_id %}<dt>Correlation ID</dt><dd class="mono">{{ evaluation.correlation_id }}</dd>{% endif %}
+            <dt>Policy version</dt>
+            <dd>{% if evaluation.policy_version %}<span class="mono">{{ evaluation.policy_version }}</span>{% else %}<span class="muted">not returned by the gateway</span>{% endif %}</dd>
+            <dt>Correlation ID</dt>
+            <dd>{% if evaluation.correlation_id %}<span class="mono">{{ evaluation.correlation_id }}</span>{% else %}<span class="muted">not returned by the gateway</span>{% endif %}</dd>
             {% if evaluation.detail %}<dt>Detail</dt><dd>{{ evaluation.detail }}</dd>{% endif %}
           </dl>
           {% if evaluation_evidence %}

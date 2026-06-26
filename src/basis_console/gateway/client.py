@@ -28,6 +28,7 @@ object.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -43,6 +44,11 @@ from basis_console.gateway.models import (
 from basis_console.gateway.redaction import redact_headers, redact_json
 
 log = logging.getLogger(__name__)
+
+
+def _elapsed_ms(started: float) -> float:
+    """Milliseconds elapsed since a ``time.perf_counter()`` mark, rounded to 1dp."""
+    return round((time.perf_counter() - started) * 1000.0, 1)
 
 
 class GatewayClient:
@@ -103,8 +109,17 @@ class GatewayClient:
                 transport=self._transport,
             ) as client:
                 return self._probe(client)
+        except httpx.TimeoutException as exc:
+            # A timeout is a kind of unreachable, but say so specifically.
+            log.warning("Gateway timed out at %s: %s", self._base_url, exc)
+            return GatewayStatusReport(
+                status=GatewayStatus.UNREACHABLE,
+                base_url=self._base_url,
+                configured=True,
+                detail=f"gateway did not respond within {self._timeout:g}s (timeout)",
+            )
         except httpx.HTTPError as exc:
-            # Connection refused, DNS failure, timeout, etc.
+            # Connection refused, DNS failure, etc.
             log.warning("Gateway unreachable at %s: %s", self._base_url, exc)
             return GatewayStatusReport(
                 status=GatewayStatus.UNREACHABLE,
@@ -188,6 +203,7 @@ class GatewayClient:
             )
 
         target_url = f"{self._base_url}{endpoint}"
+        started = time.perf_counter()
         try:
             with httpx.Client(
                 base_url=self._base_url,
@@ -195,6 +211,17 @@ class GatewayClient:
                 transport=self._transport,
             ) as client:
                 response = client.get(endpoint)
+        except httpx.TimeoutException as exc:
+            log.warning("Gateway diagnostic probe of %s timed out: %s", target_url, exc)
+            return GatewayProbeResult(
+                endpoint=endpoint,
+                target_url=target_url,
+                checked_at=checked_at,
+                reached=False,
+                timed_out=True,
+                latency_ms=_elapsed_ms(started),
+                error=f"gateway did not respond within {self._timeout:g}s (timeout)",
+            )
         except httpx.HTTPError as exc:
             log.warning("Gateway diagnostic probe of %s failed: %s", target_url, exc)
             return GatewayProbeResult(
@@ -202,6 +229,7 @@ class GatewayClient:
                 target_url=target_url,
                 checked_at=checked_at,
                 reached=False,
+                latency_ms=_elapsed_ms(started),
                 error=f"could not contact gateway: {exc}",
             )
         except Exception as exc:  # pragma: no cover - defensive catch-all
@@ -214,7 +242,9 @@ class GatewayClient:
                 error=f"unexpected error: {exc}",
             )
 
-        return self._build_probe_result(endpoint, target_url, checked_at, response)
+        return self._build_probe_result(
+            endpoint, target_url, checked_at, response, _elapsed_ms(started)
+        )
 
     @staticmethod
     def _build_probe_result(
@@ -222,6 +252,7 @@ class GatewayClient:
         target_url: str,
         checked_at: str,
         response: httpx.Response,
+        latency_ms: float | None = None,
     ) -> GatewayProbeResult:
         """Map an HTTP response to a redacted ``GatewayProbeResult``. Never raises."""
         body: dict[str, Any] | None = None
@@ -246,6 +277,7 @@ class GatewayClient:
             response_json=body,
             headers=headers,
             correlation_id=correlation_id,
+            latency_ms=latency_ms,
         )
 
     # ------------------------------------------------------------------
@@ -292,8 +324,16 @@ class GatewayClient:
                 transport=self._transport,
             ) as client:
                 response = client.post("/v1/evaluate", json=body, headers=headers)
+        except httpx.TimeoutException as exc:
+            # A timeout is a kind of unavailable; say so specifically. Token must not leak.
+            log.warning("Gateway evaluation timed out at %s: %s", self._base_url, exc)
+            return GatewayEvaluationResult(
+                status=GatewayEvaluationStatus.UNAVAILABLE,
+                timed_out=True,
+                detail=f"gateway did not respond within {self._timeout:g}s (timeout)",
+            )
         except httpx.HTTPError as exc:
-            # Connection refused, DNS failure, timeout, etc. Token must not leak.
+            # Connection refused, DNS failure, etc. Token must not leak.
             log.warning("Gateway evaluation could not contact %s: %s", self._base_url, exc)
             return GatewayEvaluationResult(
                 status=GatewayEvaluationStatus.UNAVAILABLE,

@@ -29,14 +29,32 @@
       <dd>
         {% if diagnostics.ready.not_configured %}<span class="muted">n/a</span>
         {% elif diagnostics.ready.reached %}<span class="gw-status gw-{{ 'success' if diagnostics.ready.ok else 'validation_error' }}">HTTP {{ diagnostics.ready.http_status }}</span>
+        {% elif diagnostics.ready.timed_out %}<span class="gw-status gw-unavailable">timed out</span>
         {% else %}<span class="gw-status gw-unavailable">unreachable</span>{% endif %}
       </dd>
+      {% if diagnostics.health.latency_ms is not none or diagnostics.ready.latency_ms is not none %}
+        <dt>Response latency</dt>
+        <dd class="mono">
+          {% if diagnostics.health.latency_ms is not none %}/health {{ diagnostics.health.latency_ms }} ms{% endif %}
+          {% if diagnostics.ready.latency_ms is not none %}{% if diagnostics.health.latency_ms is not none %} · {% endif %}/ready {{ diagnostics.ready.latency_ms }} ms{% endif %}
+        </dd>
+      {% endif %}
       <dt>Last checked</dt>
       <dd class="mono">{{ diagnostics.checked_at }}</dd>
+      {% if diagnostics.last_successful_health or diagnostics.last_successful_ready %}
+        <dt>Last successful</dt>
+        <dd class="mono">
+          {% if diagnostics.last_successful_health %}/health {{ diagnostics.last_successful_health }}{% endif %}
+          {% if diagnostics.last_successful_ready %}{% if diagnostics.last_successful_health %} · {% endif %}/ready {{ diagnostics.last_successful_ready }}{% endif %}
+        </dd>
+      {% endif %}
     </dl>
     <p class="notice {% if diagnostics.connection_state == 'ready' %}ok-notice{% elif diagnostics.connection_state in ('unreachable', 'error') %}warn-notice{% endif %}">
       {{ diagnostics.connection_summary }}
     </p>
+    {% if diagnostics.next_step %}
+      <p class="muted"><strong>Next step:</strong> {{ diagnostics.next_step }}</p>
+    {% endif %}
     {% if diagnostics.connection_state == 'not_configured' %}
       <p class="notice">
         Set the <code>GATEWAY_BASE_URL</code> environment variable to a running
@@ -47,6 +65,28 @@
     {% endif %}
   </section>
 
+  {# ── 1b. Connection state glossary ─────────────────────────────────────── #}
+  <details class="state-glossary">
+    <summary>What these connection states mean</summary>
+    <table class="grid">
+      <thead><tr><th>State</th><th>Meaning</th><th>What to do</th></tr></thead>
+      <tbody>
+        {% for guide in state_guide %}
+          <tr {% if guide.state == diagnostics.connection_state %}class="current-state"{% endif %}>
+            <td><span class="badge gw-{{ guide.state }}">{{ guide.state }}</span></td>
+            <td>{{ guide.meaning }}</td>
+            <td class="muted">{{ guide.next_step }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">
+      <code>ready</code> means the gateway answered <code>/ready</code> with 200;
+      <code>reachable</code> means <code>/health</code> is OK but the gateway is not
+      reporting ready; <code>unreachable</code> means it could not be contacted at all.
+    </p>
+  </details>
+
   {# ── 2. Health Check Panel ─────────────────────────────────────────────── #}
   <h2>Health <span class="tag">GET /health</span></h2>
   {% if diagnostics.health.not_configured %}
@@ -56,6 +96,9 @@
       <dl class="kv">
         <dt>Target</dt><dd class="mono">{{ diagnostics.health.target_url }}</dd>
         <dt>HTTP status</dt><dd class="mono">{{ diagnostics.health.http_status }}</dd>
+        {% if diagnostics.health.latency_ms is not none %}
+          <dt>Latency</dt><dd class="mono">{{ diagnostics.health.latency_ms }} ms</dd>
+        {% endif %}
         {% if diagnostics.health.response_json %}
           <dt>status</dt><dd class="mono">{{ diagnostics.health.response_json.get("status", "—") }}</dd>
           <dt>service</dt><dd class="mono">{{ diagnostics.health.response_json.get("service", "—") }}</dd>
@@ -64,7 +107,7 @@
     </article>
   {% else %}
     <p class="notice warn-notice">
-      Could not contact the gateway{% if diagnostics.health.error %} ({{ diagnostics.health.error }}){% endif %}.
+      {% if diagnostics.health.timed_out %}The gateway did not respond within the configured timeout{% else %}Could not contact the gateway{% endif %}{% if diagnostics.health.error %} ({{ diagnostics.health.error }}){% endif %}.
     </p>
   {% endif %}
 
@@ -77,6 +120,9 @@
       <dl class="kv">
         <dt>Target</dt><dd class="mono">{{ diagnostics.ready.target_url }}</dd>
         <dt>HTTP status</dt><dd class="mono">{{ diagnostics.ready.http_status }}</dd>
+        {% if diagnostics.ready.latency_ms is not none %}
+          <dt>Latency</dt><dd class="mono">{{ diagnostics.ready.latency_ms }} ms</dd>
+        {% endif %}
         <dt>Overall</dt>
         <dd>
           {% if diagnostics.overall_ready is none %}<span class="muted">unknown</span>
@@ -106,7 +152,7 @@
     </article>
   {% else %}
     <p class="notice warn-notice">
-      Could not read readiness{% if diagnostics.ready.error %} ({{ diagnostics.ready.error }}){% endif %}.
+      {% if diagnostics.ready.timed_out %}Readiness probe timed out{% else %}Could not read readiness{% endif %}{% if diagnostics.ready.error %} ({{ diagnostics.ready.error }}){% endif %}.
     </p>
   {% endif %}
 
@@ -151,10 +197,9 @@
   {# ── 6. Raw Response Viewer ────────────────────────────────────────────── #}
   <h2>Raw responses <span class="tag">redacted</span></h2>
   <p class="lead">
-    Raw payloads and selected headers for learning and debugging. Sensitive
-    headers and fields (authorization, tokens, cookies, secrets) are redacted
-    defensively before display.
+    Raw payloads and selected headers for learning and debugging.
   </p>
+  <p class="notice">{{ redaction_assurance }}</p>
 
   {% if diagnostics.health_json or diagnostics.health_headers %}
     <details class="raw-response" open>

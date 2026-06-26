@@ -96,6 +96,10 @@ class GatewayProbeResult:
     response_json   The parsed (and redacted) response body, when JSON.
     headers         Selected, redacted response headers (lowercased keys).
     correlation_id  The ``X-Correlation-ID`` response header, when present.
+    latency_ms      Round-trip time of the probe in milliseconds, when measured
+                    (on a completed request or a timed-out/failed attempt).
+    timed_out       True when the probe failed specifically because the gateway
+                    did not respond within the configured timeout.
     error           Transport error message when the gateway could not be reached.
     """
 
@@ -109,6 +113,8 @@ class GatewayProbeResult:
     response_json: dict[str, Any] | None = None
     headers: dict[str, str] = dataclass_field(default_factory=dict)
     correlation_id: str | None = None
+    latency_ms: float | None = None
+    timed_out: bool = False
     error: str | None = None
 
 
@@ -143,6 +149,50 @@ class GatewayEvaluationStatus(str, Enum):
     GATEWAY_ERROR = "gateway_error"
 
 
+# Operator-facing, one-line explanation of each evaluation outcome category. These
+# describe *what the gateway returned* (or why no call was made); the console never
+# decides anything itself. Kept here next to the enum so the explanation and the
+# status it describes cannot drift apart.
+EVALUATION_STATE_EXPLANATIONS: dict[GatewayEvaluationStatus, str] = {
+    GatewayEvaluationStatus.NOT_CONFIGURED: (
+        "No gateway base URL is configured, so no evaluation was attempted. Set "
+        "GATEWAY_BASE_URL to a running basis-gateway to enable live evaluation."
+    ),
+    GatewayEvaluationStatus.TOKEN_MISSING: (
+        "No server-side bearer token is configured. The gateway requires a verified "
+        "Bearer token on /v1/evaluate and derives the subject from it, so live "
+        "evaluation is disabled until GATEWAY_BEARER_TOKEN is set."
+    ),
+    GatewayEvaluationStatus.SUCCESS: (
+        "The gateway evaluated the request and returned an ALLOW decision (HTTP 200). "
+        "The console relays this verbatim and never recomputes it."
+    ),
+    GatewayEvaluationStatus.DENIED: (
+        "The gateway returned a DENY / NOT_APPLICABLE decision (HTTP 403). This is a "
+        "normal gateway answer shown verbatim — not a console or transport error."
+    ),
+    GatewayEvaluationStatus.UNAUTHORIZED: (
+        "The gateway rejected the bearer token (HTTP 401 — missing, expired, or "
+        "invalid). Check GATEWAY_BEARER_TOKEN against the gateway's OIDC issuer; the "
+        "console issues no tokens of its own."
+    ),
+    GatewayEvaluationStatus.VALIDATION_ERROR: (
+        "The gateway rejected the request body (HTTP 400). The action or resource "
+        "shape did not satisfy the gateway/kernel contract; the gateway composes the "
+        "canonical action and resource id and validates them."
+    ),
+    GatewayEvaluationStatus.UNAVAILABLE: (
+        "The gateway could not be reached or reported itself unavailable (HTTP 503, a "
+        "connection error, or a timeout). The console surfaces no decision and never "
+        "falls back to local authorization."
+    ),
+    GatewayEvaluationStatus.GATEWAY_ERROR: (
+        "The gateway returned an unexpected status or response. The console relays "
+        "this without reinterpreting it."
+    ),
+}
+
+
 @dataclass(frozen=True)
 class GatewayEvaluationResult:
     """Typed result of a console-initiated ``/v1/evaluate`` call.
@@ -166,6 +216,8 @@ class GatewayEvaluationResult:
     error_code      Machine-readable error code from an ErrorResponse body.
     error_message   Human-readable error message from an ErrorResponse body.
     detail          Console-side note for transport failures (no gateway body).
+    timed_out       True when the call failed specifically because the gateway did
+                    not respond within the configured timeout.
     response_json   The parsed response body, for raw display. Contains no token.
     """
 
@@ -179,6 +231,7 @@ class GatewayEvaluationResult:
     error_code: str | None = None
     error_message: str | None = None
     detail: str | None = None
+    timed_out: bool = False
     response_json: dict[str, object] | None = None
 
     @property
@@ -188,6 +241,15 @@ class GatewayEvaluationResult:
             GatewayEvaluationStatus.NOT_CONFIGURED,
             GatewayEvaluationStatus.TOKEN_MISSING,
         )
+
+    @property
+    def explanation(self) -> str:
+        """A plain, operator-facing explanation of this outcome category.
+
+        Reads the gateway's outcome; it never reinterprets an ALLOW/DENY decision.
+        Returns an empty string only for an unknown status (should not happen).
+        """
+        return EVALUATION_STATE_EXPLANATIONS.get(self.status, "")
 
     @property
     def composition_evidence(self) -> dict[str, object]:

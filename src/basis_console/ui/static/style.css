@@ -317,3 +317,10 @@ details.audit-event h3 {
   font-size: 0.8rem;
   border-top: 1px solid var(--border);
 }
+
+/* Gateway Diagnostics connection-state glossary (Phase 14). */
+.state-glossary { margin: 0.75rem 0 1.25rem; }
+.state-glossary summary { cursor: pointer; color: var(--muted); }
+.state-glossary table { margin-top: 0.6rem; }
+.state-glossary tr.current-state { background: rgba(78, 161, 211, 0.10); }
+.state-glossary tr.current-state td { font-weight: 600; }

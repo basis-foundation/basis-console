@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–12)
+# basis-console — Architecture Notes (Phases 1–14)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -683,6 +683,55 @@ and `FlowStep`). They are named for what the console *shows* and deliberately
 avoid names that would imply backend authority (`SystemState`,
 `CanonicalWorkspace`, `OperationalControlPlane`). The module imports no
 `basis-core`.
+
+## Phase 14 live gateway integration polish
+
+Phase 14 polishes the *existing* live gateway integration without changing any
+boundary. It adds no new gateway endpoint, no new console page, no authentication,
+and no `basis-core` import; it changes only what the console **derives from and
+displays of** the same `/health`, `/ready`, and `/v1/evaluate` responses it already
+used.
+
+### What it adds (display only)
+
+- **Latency and timeout visibility.** Each diagnostic probe records its round-trip
+  `latency_ms`, and a timeout is captured distinctly (`timed_out`) from a generic
+  unreachable cause. The gateway client times the call locally; it invents no
+  gateway-provided latency datum.
+- **Consistent connection state.** The five-state vocabulary
+  (`not_configured` / `unreachable` / `error` / `reachable` / `ready`) is described
+  once in `basis_console.diagnostics.connection_state_guide()` and surfaced on the
+  home page, the Operator Workspace, and Gateway Diagnostics, each with the same
+  label and a matching `next_step`. The diagnostics aggregator also records the
+  `last_successful_health` / `last_successful_ready` timestamps (the probe's
+  `checked_at` when the probe returned 200).
+- **Evaluation outcome explanations.** Each `GatewayEvaluationStatus` has a stable,
+  operator-facing explanation (`EVALUATION_STATE_EXPLANATIONS`, surfaced via
+  `GatewayEvaluationResult.explanation`) so an unauthorized / validation /
+  unavailable / timeout / denied outcome reads clearly. A missing correlation id or
+  policy version is shown as "not returned by the gateway" rather than hidden.
+
+### Boundaries preserved
+
+The console still **observes, inspects, submits through the gateway, and explains**.
+It does not evaluate, authenticate, store audit, own inventory, or call
+`basis-core`. Latency is a local measurement, not a claim about gateway internals;
+the explanations describe the gateway's own response and never reinterpret an
+ALLOW/DENY decision. Sample/identity/resource/policy/audit pages remain clearly
+labelled sample data — Phase 14 turns no sample view into fake live data.
+
+### Gateway contract gaps (follow-ups for basis-gateway, not console)
+
+These remain true after Phase 14 and are **not** worked around in the console:
+
+- no console-facing policy, audit-history, identity-diagnostic, or resource-catalog
+  endpoints exist, so those pages stay sample-labelled;
+- `/health` and `/ready` expose no policy name/version (only `/v1/evaluate` does);
+- there is no gateway-minted dev token, so `GATEWAY_BEARER_TOKEN` is supplied
+  out-of-band.
+
+If a missing capability is needed, it is filed against `basis-gateway`; the console
+does not implement it.
 
 ## How the console reflects these boundaries
 

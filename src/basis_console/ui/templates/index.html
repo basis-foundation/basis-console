@@ -5,9 +5,10 @@
   <p class="status"><span class="dot ok"></span> Status: running</p>
 
   <p class="lead">
-    This is the human-facing operational interface for the BASIS ecosystem. It
-    provides read-only visibility into policy state, authorization decisions, and
-    audit activity.
+    This is the human-facing operational interface for the BASIS ecosystem. It is
+    read-oriented and gateway-first: live gateway health/readiness and gateway-backed
+    decision evaluation when configured, alongside clearly-labelled sample views that
+    explain policy, audit, identity, and resource concepts.
   </p>
 
   <p class="notice ok-notice">
@@ -56,6 +57,15 @@
     {% else %}
       <p class="notice warn-notice">
         Gateway returned an unexpected response{% if gateway.detail %} ({{ gateway.detail }}){% endif %}.
+      </p>
+    {% endif %}
+
+    {% if gateway.status.value != "not_configured" %}
+      <p class="muted">
+        Full health, readiness components, latency, and correlation IDs are on
+        <a href="/gateway">Gateway Diagnostics</a>. The same connection state
+        (<code>{{ gateway.status.value }}</code>) is shown there and on the
+        <a href="/workspace">Operator Workspace</a>.
       </p>
     {% endif %}
   </section>
