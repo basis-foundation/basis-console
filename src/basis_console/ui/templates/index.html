@@ -18,6 +18,15 @@
     questions.
   </p>
 
+  {% set teaches = [
+    "The console is a read-oriented, gateway-first interface — it observes and submits, it does not decide.",
+    "Live data (gateway connection state) is shown distinctly from clearly-labelled sample views.",
+    "Every request to the BASIS system flows Operator → basis-console → basis-gateway → basis-core.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   <section class="status-panel">
     <h2>Status</h2>
     <dl class="kv">
@@ -93,14 +102,16 @@
     </a>
   </div>
 
-  <section class="boundary">
-    <h3>What this console is not</h3>
-    <p>
-      The console does not evaluate authorization decisions, authenticate users,
-      normalize protocols, or produce audit records. Those responsibilities
-      belong to <code>basis-core</code>, <code>basis-gateway</code>, and
-      <code>basis-adapters</code>. In production the console reaches the system
-      only through the gateway.
-    </p>
-  </section>
+  {% if is_training_mode %}
+    <section class="boundary">
+      <h3>What this console is not</h3>
+      <p>
+        The console does not evaluate authorization decisions, authenticate users,
+        normalize protocols, or produce audit records. Those responsibilities
+        belong to <code>basis-core</code>, <code>basis-gateway</code>, and
+        <code>basis-adapters</code>. In production the console reaches the system
+        only through the gateway.
+      </p>
+    </section>
+  {% endif %}
 {% endblock %}

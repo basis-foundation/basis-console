@@ -51,9 +51,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The Bearer token is deliberately omitted from this log line — only its
         # presence (not its value) is reported.
         log.info(
-            "basis-console starting service=%s env=%s host=%s port=%s gateway=%s eval=%s",
+            "basis-console starting service=%s env=%s mode=%s host=%s port=%s gateway=%s eval=%s",
             config.service_name,
             config.environment,
+            config.basis_console_mode,
             config.host,
             config.port,
             config.gateway_base_url or "(not configured)",

@@ -15,6 +15,19 @@ records, or own resource inventory.
 
 ### Added
 
+- **Presentation modes (`BASIS_CONSOLE_MODE`)** — two UX-only modes selected by
+  configuration, defaulting to `operator`. The mode names the *audience* of the
+  interface, not a deployment environment. `operator` is professional and concise
+  (clean, operator-focused screenshots/demos); `training` adds a visible
+  top-level training banner, per-page "What this page teaches" callouts, and a
+  standard BASIS architecture explanation (console observes/inspects/submits/
+  explains, gateway enforces, core evaluates, adapters normalize, identity is the
+  future `basis-identity` service, deploy/demo/topology are future layers). Both
+  modes present the **same application** (same pages, navigation, controls,
+  routing, and workflows) and keep sample/live/future labels honest; training
+  mode only adds educational content. An invalid mode fails startup cleanly. This
+  is a presentation/copy change only — no new backend authority, endpoints,
+  evaluation, authentication, layout change, or behavior change.
 - **Operator Workspace / Overview** (`GET /workspace`) — a single orientation
   landing page organizing the console around operational questions (Who is the
   subject? What resource is targeted? Can this action be performed? Is the

@@ -14,9 +14,11 @@
         <a href="{{ path }}" class="{{ 'active' if active == path else '' }}">{{ label }}</a>
       {% endfor %}
     </nav>
+    {% include "partials/mode_badge.html" %}
   </header>
 
   <main class="content">
+    {% include "partials/training_banner.html" %}
     {% block content %}{% endblock %}
   </main>
 

@@ -9,6 +9,15 @@
     authenticate users, evaluate policy, or bypass the gateway.
   </p>
 
+  {% set teaches = [
+    "The gateway is the enforcement boundary — the single path from the console to the kernel. This page only observes its health and readiness.",
+    "The console probes only the gateway's real /health and /ready endpoints; it invents no endpoints and never falls back to local authorization when the gateway is down.",
+    "Sensitive headers and fields are redacted defensively before display; correlation IDs come from the gateway, never fabricated here.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {# ── 1. Gateway Connection Summary ─────────────────────────────────────── #}
   <section class="status-panel">
     <h2>Connection summary</h2>
@@ -243,14 +252,16 @@
     </p>
   {% endif %}
 
-  <section class="boundary">
-    <h3>What this view is not</h3>
-    <p>
-      Gateway Diagnostics provides operational visibility into gateway
-      health/readiness. It does not configure the gateway, authenticate users,
-      evaluate policy, or bypass the gateway. Future identity diagnostics
-      (OIDC/JWKS/JWT inspection) will integrate through the future
-      <code>basis-identity</code> service, not through console-owned protocol logic.
-    </p>
-  </section>
+  {% if is_training_mode %}
+    <section class="boundary">
+      <h3>What this view is not</h3>
+      <p>
+        Gateway Diagnostics provides operational visibility into gateway
+        health/readiness. It does not configure the gateway, authenticate users,
+        evaluate policy, or bypass the gateway. Future identity diagnostics
+        (OIDC/JWKS/JWT inspection) will integrate through the future
+        <code>basis-identity</code> service, not through console-owned protocol logic.
+      </p>
+    </section>
+  {% endif %}
 {% endblock %}

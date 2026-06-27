@@ -1,0 +1,22 @@
+{# Reusable training-only "What this page teaches" callout.
+
+   Usage from a page template:
+
+     {% set teaches = ["point one", "point two"] %}
+     {% with callout_points=teaches %}
+       {% include "partials/training_callout.html" %}
+     {% endwith %}
+
+   Optionally override the heading with callout_title. Renders nothing unless
+   training mode is active and points were supplied, so operator mode stays
+   clean. #}
+{% if is_training_mode and callout_points %}
+  <aside class="training-callout" aria-label="{{ callout_title or 'What this page teaches' }}">
+    <h3>{{ callout_title or "What this page teaches" }}</h3>
+    <ul>
+      {% for point in callout_points %}
+        <li>{{ point }}</li>
+      {% endfor %}
+    </ul>
+  </aside>
+{% endif %}

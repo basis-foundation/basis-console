@@ -131,8 +131,29 @@ _NAV = [
 ]
 
 
+def _console_mode(request: Request) -> str:
+    """Return the configured presentation mode, defaulting to operator.
+
+    Reads ``app.state.config`` set during startup. Falls back to ``operator`` if
+    config is unavailable (e.g. a failed startup) so pages still render cleanly
+    in the default operator mode rather than erroring.
+    """
+    config = getattr(request.app.state, "config", None)
+    mode = getattr(config, "basis_console_mode", "operator")
+    return mode if mode in ("operator", "training") else "operator"
+
+
 def _base_context(request: Request, active: str) -> dict[str, object]:
-    return {"request": request, "nav": _NAV, "active": active}
+    mode = _console_mode(request)
+    return {
+        "request": request,
+        "nav": _NAV,
+        "active": active,
+        # Presentation mode, available to every template (and base.html) so
+        # training-only panels render without duplicating logic per view.
+        "console_mode": mode,
+        "is_training_mode": mode == "training",
+    }
 
 
 def _gateway_client(request: Request) -> GatewayClient:

@@ -1,0 +1,45 @@
+{# Top-level training-mode banner + standard BASIS architecture explanation.
+
+   Rendered once at the top of every page (via base.html) only in training mode.
+   Operator mode shows none of this. It teaches the ecosystem responsibilities
+   and makes clear training mode is not an operator view. It adds no capability
+   and changes no behavior — it is explanatory copy only. #}
+{% if is_training_mode %}
+  <aside class="training-banner" role="note" aria-label="Training mode">
+    <div class="training-banner-head">
+      <span class="mode-badge mode-training">training mode</span>
+      <strong>Training mode is enabled.</strong>
+    </div>
+    <p>
+      This mode adds educational callouts and architecture explanations for
+      learning BASIS. Do not use training mode as an operator view —
+      switch back to the default operator mode (unset <code>BASIS_CONSOLE_MODE</code>
+      or set it to <code>operator</code>) for day-to-day operator use. Both modes
+      present the same application; training mode only adds explanatory content.
+    </p>
+
+    <details class="training-arch">
+      <summary>How the BASIS ecosystem fits together</summary>
+      <p class="muted">
+        Each component owns one responsibility. The console never crosses these
+        boundaries — it observes, inspects, submits through the gateway, and
+        explains.
+      </p>
+      <dl class="kv">
+        <dt><strong>basis-console</strong></dt>
+        <dd>Observes, inspects, submits requests through the gateway, and explains the model. It does not decide.</dd>
+        <dt><strong>basis-gateway</strong></dt>
+        <dd>Enforces the boundary: authenticates the caller, composes canonical actions/resource ids, and is the single path to the kernel.</dd>
+        <dt><strong>basis-core</strong></dt>
+        <dd>Evaluates authorization (policy / roles / conditions) and produces the decision and audit evidence.</dd>
+        <dt><strong>basis-adapters</strong></dt>
+        <dd>Normalize OT/platform protocols (BACnet, Modbus, MQTT, …) into typed resources and actions.</dd>
+        <dt><strong>basis-identity</strong> <span class="tag">future</span></dt>
+        <dd>Identity (OIDC/JWKS/JWT/SAML/SCIM) belongs to the future basis-identity service. The console will display it, never implement it.</dd>
+        <dt>deploy / demo / topology <span class="tag">future</span></dt>
+        <dd>Deployment packaging, demo data feeds, and topology views are future layers, not current console authority.</dd>
+      </dl>
+      <p class="mono">Operator &rarr; basis-console &rarr; basis-gateway &rarr; basis-core</p>
+    </details>
+  </aside>
+{% endif %}

@@ -11,6 +11,15 @@
   <p class="notice">{{ notice }}</p>
   <p class="notice">{{ boundary_notice }}</p>
 
+  {% set teaches = [
+    "External identity becomes a normalized BASIS subject at the gateway — the console renders, inspects, and explains, but never authenticates, verifies tokens, or evaluates.",
+    "The claims/token preview here is unverified sample data shown for illustration; the gateway owns claim→subject mapping.",
+    "Identity (OIDC/JWKS/JWT/SAML/SCIM) belongs to the future basis-identity service, which the console will display, never implement.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {# ── 1. Verified Subject ───────────────────────────────────────────────── #}
   <h2>Verified subject {% if identity.is_sample %}<span class="tag">sample</span>{% endif %}</h2>
   <p class="lead">

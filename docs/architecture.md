@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–14)
+# basis-console — Architecture Notes (Phases 1–15)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -732,6 +732,43 @@ These remain true after Phase 14 and are **not** worked around in the console:
 
 If a missing capability is needed, it is filed against `basis-gateway`; the console
 does not implement it.
+
+## Phase 15 presentation modes (operator / training)
+
+Phase 15 adds two **presentation modes** selected by `BASIS_CONSOLE_MODE`
+(`operator`, the default, and `training`). This is a UX/copy concern only. It
+adds no backend authority, no new page, no endpoint, no authentication, no
+evaluation, and no `basis-core` import; it changes only how existing pages are
+explained. The mode names the **audience** of the interface, not a deployment
+environment.
+
+### Same application in both modes (invariant)
+
+Operator mode and training mode must always present the **same application**.
+Training mode may only **add** educational content; it must never change the
+application itself. Concretely, switching modes must **not**:
+
+- move, add, or remove navigation;
+- hide, add, or reorder pages or routes;
+- relocate, add, or remove buttons or controls;
+- change any workflow, form behavior, or submission path;
+- change routing or URLs;
+- expose any functionality that the other mode lacks.
+
+The only permitted difference is **educational presentation**: in training mode a
+top-level banner, per-page "What this page teaches" callouts, and a standard BASIS
+architecture explanation are *added*, and the purely-pedagogical trailing
+explainer panels are shown (they are hidden in the cleaner operator default).
+Every route, nav link, control, and behavior is otherwise identical. This is an
+intentional architectural rule for future contributors: new mode-conditional
+markup may only add explanatory copy, never gate a page, control, or behavior.
+
+### Honesty preserved in both modes
+
+Mode is never an excuse to mislead. Sample/live/future labels, redaction notices,
+and short boundary statements remain in **both** modes; operator mode is concise,
+not dishonest. Training mode adds explanation without making any sample view look
+live.
 
 ## How the console reflects these boundaries
 

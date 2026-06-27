@@ -14,6 +14,15 @@
   <p class="notice">{{ notice }}</p>
   <p class="notice">{{ boundary_notice }}</p>
 
+  {% set teaches = [
+    "The console displays audit evidence produced by basis-core and basis-gateway — it does not produce, store, or own canonical audit records.",
+    "A correlation ID ties one request across the gateway response, the audit evidence, and operator troubleshooting; the gateway generates it, the console never fabricates it.",
+    "These events are sample data because the gateway exposes no audit-history endpoint yet; live decision evidence is available today via the Simulate page.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {# ── 2. Recent Authorization Events ────────────────────────────────────── #}
   <h2>Recent authorization events <span class="tag">sample</span></h2>
   <table class="grid">
@@ -120,17 +129,19 @@
   {% endfor %}
 
   {# ── 5b. Correlation ID Visibility ─────────────────────────────────────── #}
-  <section class="boundary">
-    <h3>Why correlation IDs matter</h3>
-    <p>
-      A correlation ID connects a single request across the system: the original
-      request, the gateway response, the recorded audit evidence, and operator
-      troubleshooting. The gateway generates it and returns it on the
-      <code>X-Correlation-ID</code> response header. The console never fabricates
-      correlation IDs — the sample events above carry clearly-sample IDs, and live
-      IDs come from the gateway.
-    </p>
-  </section>
+  {% if is_training_mode %}
+    <section class="boundary">
+      <h3>Why correlation IDs matter</h3>
+      <p>
+        A correlation ID connects a single request across the system: the original
+        request, the gateway response, the recorded audit evidence, and operator
+        troubleshooting. The gateway generates it and returns it on the
+        <code>X-Correlation-ID</code> response header. The console never fabricates
+        correlation IDs — the sample events above carry clearly-sample IDs, and live
+        IDs come from the gateway.
+      </p>
+    </section>
+  {% endif %}
 
   {# ── 6. Evaluation Result Integration ──────────────────────────────────── #}
   <section class="status-panel">

@@ -1,0 +1,11 @@
+{# Topbar chip showing the active presentation mode.
+
+   Shown in both modes so the current view is always honestly labelled. In
+   operator mode it is a quiet, muted chip; in training mode it is highlighted to
+   reinforce that the view is an educational, non-operator view. Renders nothing
+   if no mode is set. #}
+{% if console_mode %}
+  <span class="mode-badge mode-{{ console_mode }}" title="Presentation mode (BASIS_CONSOLE_MODE). UX only — does not change runtime behavior.">
+    {{ console_mode }} mode
+  </span>
+{% endif %}

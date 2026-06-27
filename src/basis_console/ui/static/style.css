@@ -318,6 +318,56 @@ details.audit-event h3 {
   border-top: 1px solid var(--border);
 }
 
+/* Presentation modes: mode badge, training banner, training callouts (Phase 15).
+   These are UX-only and add no capability; operator mode stays visually clean. */
+.mode-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.topbar .mode-badge { margin-left: auto; }
+/* Operator: quiet/muted so the default operator screens stay clean. */
+.mode-badge.mode-operator { background: var(--surface-2); color: var(--muted); }
+/* Training: highlighted to signal an educational, non-operator view. */
+.mode-badge.mode-training {
+  background: rgba(210, 153, 34, 0.15);
+  border-color: #d29922;
+  color: #d29922;
+}
+
+.training-banner {
+  margin: 0 0 1.5rem;
+  background: rgba(210, 153, 34, 0.08);
+  border: 1px solid #d29922;
+  border-left: 3px solid #d29922;
+  border-radius: 8px;
+  padding: 0.85rem 1.1rem;
+}
+.training-banner-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.training-banner p { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.9rem; }
+.training-arch { margin-top: 0.75rem; }
+.training-arch summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.training-arch .kv { margin-top: 0.6rem; }
+.training-arch .mono { margin-top: 0.6rem; color: var(--muted); }
+
+.training-callout {
+  margin: 1rem 0 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+.training-callout h3 { margin: 0 0 0.4rem; color: var(--accent); font-size: 0.95rem; }
+.training-callout ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }
+.training-callout li { margin: 0.2rem 0; }
+
 /* Gateway Diagnostics connection-state glossary (Phase 14). */
 .state-glossary { margin: 0.75rem 0 1.25rem; }
 .state-glossary summary { cursor: pointer; color: var(--muted); }

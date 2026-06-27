@@ -14,6 +14,15 @@
   <p class="notice">{{ notice }}</p>
   <p class="notice">{{ boundary_notice }}</p>
 
+  {% set teaches = [
+    "Adapters normalize OT/platform resources into typed authorization targets; the console displays them, it does not discover devices or own inventory.",
+    "A resource identifier is composed by the gateway: resource_type + local resource_id → canonical resource_id (e.g. ahu + rooftop-1 → ahu:rooftop-1).",
+    "This catalog is clearly-labelled sample data — the gateway exposes no resource-catalog endpoint yet.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {# ── 4. Identifier Explanation ─────────────────────────────────────────── #}
   <h2>How resource identifiers work</h2>
   <p class="lead">{{ identifier_notice }}</p>
