@@ -119,6 +119,50 @@ GATEWAY_BEARER_TOKEN="<token-obtained-out-of-band>" \
 make run
 ```
 
+## Presentation modes
+
+The console renders in one of two presentation modes, selected by
+`BASIS_CONSOLE_MODE`. This is a **UX/copy concern only** — it changes how pages
+are presented and explained, never runtime behavior, architectural boundaries,
+APIs, or capabilities. Sample/live/future labels stay honest in both modes.
+
+**`operator` (default).** Professional, concise, operator-focused. Minimal
+educational banners, clear live/sample labels — suitable for clean,
+operator-focused demos and screenshots. The large "what this page teaches" /
+architecture explainer panels are hidden; short boundary statements, the footer
+boundary note, and sample/live/future labels remain.
+
+```bash
+make run                                   # operator is the default
+```
+
+**`training`.** Educational. Adds a visible top-level training banner, a
+per-page "What this page teaches" callout, and a BASIS architecture explanation
+(console observes/inspects/submits/explains, gateway enforces, core evaluates,
+adapters normalize, identity is the future `basis-identity` service, and
+deploy/demo/topology are future layers). Training mode is **not** an operator
+view.
+
+```bash
+BASIS_CONSOLE_MODE=training make run
+
+# training mode also composes with the gateway run modes above:
+BASIS_CONSOLE_MODE=training GATEWAY_BASE_URL=http://127.0.0.1:8000 make run
+```
+
+An invalid `BASIS_CONSOLE_MODE` (anything other than `operator` or `training`)
+fails configuration validation at startup with a clear message rather than
+starting in an ambiguous state.
+
+**Same application in both modes (architectural rule).** Operator mode and
+training mode always present the **same application**. Training mode may only
+**add** educational content (the banner, per-page callouts, and architecture
+explanations). It must never move navigation, hide or add pages, relocate
+buttons, change workflows, change routing, or expose any functionality that
+operator mode lacks. Only the educational presentation differs — the routes,
+navigation, controls, and behavior are identical. Contributors must preserve
+this invariant.
+
 ## Configuration
 
 All configuration comes from environment variables with safe local defaults.
@@ -130,6 +174,7 @@ Nothing is hardcoded to a public URL or SaaS endpoint.
 | `PORT`                    | `8080`          | Bind port.                                                     |
 | `LOG_LEVEL`               | `INFO`          | One of DEBUG, INFO, WARNING, ERROR, CRITICAL.                  |
 | `ENVIRONMENT`             | `local`         | One of local, development, staging, production.                |
+| `BASIS_CONSOLE_MODE`      | `operator`      | Presentation mode: `operator` (default) or `training` (adds educational banners/callouts). UX only — same application in both modes, no behavior change. Invalid values fail startup cleanly. |
 | `GATEWAY_BASE_URL`        | _(unset)_       | Base URL of `basis-gateway`. Unset → `not_configured`, sample-only mode, no network call. No public URL is baked in. |
 | `GATEWAY_TIMEOUT_SECONDS` | `2.0`           | Timeout for gateway `/health`, `/ready`, and `/v1/evaluate` calls. Must be > 0. |
 | `GATEWAY_BEARER_TOKEN`    | _(unset)_       | Optional **server-side** token enabling gateway-backed evaluation. Sent only as `Authorization: Bearer <token>` to `/v1/evaluate`; **never** displayed, logged, or rendered. For local/dev/operator-controlled use. |

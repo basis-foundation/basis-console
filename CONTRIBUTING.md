@@ -57,6 +57,12 @@ The console must:
 - clearly label sample/explanatory data so it is never mistaken for live data
 - redact credential-shaped fields before display
   (`basis_console.gateway.redaction`)
+- keep presentation modes (`BASIS_CONSOLE_MODE`) presentation-only: operator and
+  training must present the **same application**. Training mode may only *add*
+  educational content — it must never move navigation, hide/add pages, relocate
+  buttons, change workflows or routing, or expose functionality the other mode
+  lacks. Mode-conditional markup may add explanatory copy, never gate a page,
+  control, or behavior.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full set of boundaries
 and design invariants.

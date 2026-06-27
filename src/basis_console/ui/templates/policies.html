@@ -8,6 +8,15 @@
   </p>
   <p class="notice">{{ notice }}</p>
 
+  {% set teaches = [
+    "Policy is owned by basis-core and surfaced through the gateway — the console never evaluates or edits policy.",
+    "These rules are clearly-labelled sample data; the gateway does not yet expose a console-facing policy endpoint.",
+    "A rule pairs actions and roles with a resource scope; the gateway resolves the subject's roles from its verified token.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {% for policy in policies %}
     <article class="record">
       <div class="record-head">

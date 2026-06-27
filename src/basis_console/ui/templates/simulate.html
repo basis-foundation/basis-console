@@ -15,6 +15,15 @@
 
   <p class="notice warn-notice">{{ no_eval_notice }}</p>
 
+  {% set teaches = [
+    "You build a request from a bare verb, a resource type, and a local id — the gateway composes the canonical action ({verb}:{type}) and resource id ({type}:{id}).",
+    "Preview mode never evaluates and never calls the gateway; it only shows the normalized request shape.",
+    "Live evaluation (when configured) sends no subject — the gateway derives identity from its verified Bearer token, and the console relays the decision without reinterpreting it.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   {% if loaded_example %}
     <p class="notice">Loaded sample scenario: <strong>{{ loaded_example }}</strong>. Review and submit to build its preview.</p>
   {% endif %}
@@ -288,17 +297,19 @@
     <p class="muted">See all scenarios on the <a href="/simulate/examples">examples page</a>.</p>
   </section>
 
-  <section class="boundary">
-    <h3>Where evaluation happens</h3>
-    <p>
-      Evaluation belongs to <code>basis-core</code>, reached only through
-      <code>basis-gateway</code>. In gateway-evaluation mode the console submits
-      this request to the gateway's authenticated <code>/v1/evaluate</code>
-      endpoint and displays the decision it returns. The gateway authenticates
-      the caller, derives the subject from the verified token, and assembles the
-      audit record. The console never evaluates the request itself and never
-      calls <code>basis-core</code> directly:
-    </p>
-    <p class="mono">Operator → basis-console → basis-gateway → basis-core</p>
-  </section>
+  {% if is_training_mode %}
+    <section class="boundary">
+      <h3>Where evaluation happens</h3>
+      <p>
+        Evaluation belongs to <code>basis-core</code>, reached only through
+        <code>basis-gateway</code>. In gateway-evaluation mode the console submits
+        this request to the gateway's authenticated <code>/v1/evaluate</code>
+        endpoint and displays the decision it returns. The gateway authenticates
+        the caller, derives the subject from the verified token, and assembles the
+        audit record. The console never evaluates the request itself and never
+        calls <code>basis-core</code> directly:
+      </p>
+      <p class="mono">Operator → basis-console → basis-gateway → basis-core</p>
+    </section>
+  {% endif %}
 {% endblock %}

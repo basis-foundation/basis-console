@@ -21,6 +21,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+_VALID_CONSOLE_MODES = {"operator", "training"}
 
 
 class ConsoleConfig(BaseSettings):  # type: ignore[misc]
@@ -49,6 +50,25 @@ class ConsoleConfig(BaseSettings):  # type: ignore[misc]
         default="local", alias="ENVIRONMENT"
     )
 
+    # Presentation mode. This is a UX/copy concern only — it changes how pages are
+    # rendered and explained, never runtime behavior, architectural boundaries,
+    # APIs, or capabilities.
+    #
+    #   operator (default) — professional, concise, operator-focused. Minimal
+    #     educational banners; suitable for clean, operator-focused demos and
+    #     screenshots.
+    #   training            — educational. Adds a visible training banner, page
+    #     "what this page teaches" callouts, and architecture explanations.
+    #
+    # The mode names the *audience* of the interface, not a deployment
+    # environment. Both modes present the same application (same pages,
+    # navigation, and workflows); training mode only adds explanatory copy and
+    # is explicitly NOT a substitute for the operator view. Both keep
+    # sample/live/future labels honest.
+    basis_console_mode: Literal["operator", "training"] = Field(
+        default="operator", alias="BASIS_CONSOLE_MODE"
+    )
+
     # Base URL of the basis-gateway. Optional: when unset, the console reports
     # gateway status as "not_configured" and runs in sample-only mode. No public
     # URL is ever baked in — operators point this at their own gateway.
@@ -72,6 +92,16 @@ class ConsoleConfig(BaseSettings):  # type: ignore[misc]
     gateway_bearer_token: str | None = Field(default=None, alias="GATEWAY_BEARER_TOKEN", repr=False)
 
     @property
+    def training_mode(self) -> bool:
+        """True when the console is in educational/training presentation mode."""
+        return self.basis_console_mode == "training"
+
+    @property
+    def operator_mode(self) -> bool:
+        """True when the console is in the default operator presentation mode."""
+        return self.basis_console_mode == "operator"
+
+    @property
     def gateway_evaluation_enabled(self) -> bool:
         """True when live gateway evaluation can be attempted.
 
@@ -79,6 +109,25 @@ class ConsoleConfig(BaseSettings):  # type: ignore[misc]
         rejects unauthenticated /v1/evaluate calls.
         """
         return bool(self.gateway_base_url) and bool(self.gateway_bearer_token)
+
+    @field_validator("basis_console_mode", mode="before")
+    @classmethod
+    def validate_console_mode(cls, v: object) -> object:
+        """Normalize and validate the presentation mode with a helpful error.
+
+        Accepts any case/whitespace (e.g. ``Training``) and fails cleanly with a
+        clear message listing the allowed values, rather than a generic enum
+        error, so a typo'd ``BASIS_CONSOLE_MODE`` stops startup understandably.
+        """
+        if isinstance(v, str):
+            candidate = v.strip().lower()
+            if candidate not in _VALID_CONSOLE_MODES:
+                raise ValueError(
+                    f"Invalid BASIS_CONSOLE_MODE {v!r}. "
+                    f"Must be one of: {', '.join(sorted(_VALID_CONSOLE_MODES))}"
+                )
+            return candidate
+        return v
 
     @field_validator("log_level")
     @classmethod

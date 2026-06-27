@@ -31,12 +31,14 @@
     </article>
   {% endfor %}
 
-  <section class="boundary">
-    <h3>These are previews, not decisions</h3>
-    <p>
-      Loading a scenario only fills the simulator form. Building a preview shows
-      the normalized request shape. Live evaluation runs through
-      <code>basis-gateway</code> when a gateway URL and bearer token are configured.
-    </p>
-  </section>
+  {% if is_training_mode %}
+    <section class="boundary">
+      <h3>These are previews, not decisions</h3>
+      <p>
+        Loading a scenario only fills the simulator form. Building a preview shows
+        the normalized request shape. Live evaluation runs through
+        <code>basis-gateway</code> when a gateway URL and bearer token are configured.
+      </p>
+    </section>
+  {% endif %}
 {% endblock %}

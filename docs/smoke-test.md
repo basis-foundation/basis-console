@@ -13,6 +13,9 @@ Pages to verify in every mode:
 
 Probes: `GET /health` (liveness) and `GET /ready` (readiness).
 
+Each of the run modes below can be combined with either **presentation mode**
+(`BASIS_CONSOLE_MODE`, default `operator`); see section 4.
+
 ---
 
 ## 1. Sample-only mode (no gateway)
@@ -107,3 +110,49 @@ Verify:
 > If no token is available in your environment, sections 1 and 2 are sufficient
 > to confirm the console runs and degrades honestly; section 3's first checkbox
 > (the disabled-without-token behavior) can still be verified.
+
+## 4. Presentation modes (`BASIS_CONSOLE_MODE`)
+
+Presentation mode is UX-only; it changes copy/rendering, never behavior. It can
+be combined with any run mode in sections 1–3.
+
+**Operator mode (default).**
+
+```bash
+make run                                   # operator is the default
+```
+
+- [ ] Every page (`/`, `/workspace`, `/policies`, `/simulate`, `/audit`,
+      `/identity`, `/resources`, `/gateway`) loads.
+- [ ] **No** training banner ("Training mode is enabled") appears on any page.
+- [ ] The per-page **"What this page teaches"** callouts do **not** appear.
+- [ ] The topbar shows a quiet **`operator mode`** badge.
+- [ ] Sample data is still clearly labelled (e.g. the Policies, Audit, Identity,
+      and Resources pages keep their sample-data notices), and future/non-live
+      integrations remain labelled.
+
+**Training mode.**
+
+```bash
+BASIS_CONSOLE_MODE=training make run
+# or, with a gateway:
+BASIS_CONSOLE_MODE=training GATEWAY_BASE_URL=http://127.0.0.1:8000 make run
+```
+
+- [ ] Every page loads.
+- [ ] The **training banner** appears at the top of every page, including the
+      collapsible BASIS architecture explanation.
+- [ ] Each page shows its **"What this page teaches"** callout.
+- [ ] The topbar shows a highlighted **`training mode`** badge.
+- [ ] Sample/live/future labels are still present and honest (training mode adds
+      explanation; it does not make sample data look live).
+
+**Invalid mode.**
+
+```bash
+BASIS_CONSOLE_MODE=bogus make run
+```
+
+- [ ] Startup fails (or `/ready` reports not-ready) with a clear message that
+      `BASIS_CONSOLE_MODE` must be one of `operator`, `training` — the console
+      does not start in an ambiguous mode.

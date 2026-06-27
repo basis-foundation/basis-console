@@ -63,3 +63,37 @@ def test_invalid_port_rejected(monkeypatch):
     monkeypatch.setenv("PORT", "70000")
     with pytest.raises(ValidationError):
         ConsoleConfig()
+
+
+# ── Presentation mode (BASIS_CONSOLE_MODE) ──────────────────────────────────
+
+
+def test_default_mode_is_operator():
+    config = ConsoleConfig()
+    assert config.basis_console_mode == "operator"
+    assert config.operator_mode is True
+    assert config.training_mode is False
+
+
+def test_training_mode_config(monkeypatch):
+    monkeypatch.setenv("BASIS_CONSOLE_MODE", "training")
+    config = ConsoleConfig()
+    assert config.basis_console_mode == "training"
+    assert config.training_mode is True
+    assert config.operator_mode is False
+
+
+def test_mode_is_normalized(monkeypatch):
+    monkeypatch.setenv("BASIS_CONSOLE_MODE", "  Training  ")
+    config = ConsoleConfig()
+    assert config.basis_console_mode == "training"
+
+
+def test_invalid_mode_rejected(monkeypatch):
+    monkeypatch.setenv("BASIS_CONSOLE_MODE", "bogus")
+    with pytest.raises(ValidationError) as excinfo:
+        ConsoleConfig()
+    # The error is helpful: it names the variable and the allowed values.
+    message = str(excinfo.value)
+    assert "BASIS_CONSOLE_MODE" in message
+    assert "operator" in message and "training" in message

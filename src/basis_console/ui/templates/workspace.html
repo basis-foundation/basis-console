@@ -7,6 +7,15 @@
 
   <p class="notice">{{ summary_notice }}</p>
 
+  {% set teaches = [
+    "The workspace orients you around operational questions (Who? What? Can they? Is the boundary healthy? What happened?), not repository names.",
+    "It maps the BASIS flow Identity → Resource → Gateway → Decision → Audit onto pages you can inspect.",
+    "The only live datum here is gateway connection/readiness state, reused from Gateway Diagnostics; everything else is sample/explanatory.",
+  ] %}
+  {% with callout_points=teaches %}
+    {% include "partials/training_callout.html" %}
+  {% endwith %}
+
   <section class="status-panel">
     <h2>Operational flow</h2>
     <p class="muted">
