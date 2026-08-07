@@ -19,6 +19,7 @@
     "You build a request from a bare verb, a resource type, and a local id — the gateway composes the canonical action ({verb}:{type}) and resource id ({type}:{id}).",
     "Preview mode never evaluates and never calls the gateway; it only shows the normalized request shape.",
     "Live evaluation (when configured) sends no subject — the gateway derives identity from its verified Bearer token, and the console relays the decision without reinterpreting it.",
+    "The evaluation-type selector is a separate axis from preview/gateway submission: it chooses which contract (legacy or operation-aware) the request targets, not whether the gateway is called.",
   ] %}
   {% with callout_points=teaches %}
     {% include "partials/training_callout.html" %}
@@ -38,13 +39,40 @@
   {% endif %}
 
   <form class="sim-form" method="post" action="/simulate" aria-label="Decision simulator request builder">
-    <label for="subject_id">Subject ID</label>
-    <input id="subject_id" name="subject_id" type="text" value="{{ values.subject_id }}"
-           placeholder="e.g. operator-jane" autocomplete="off">
+    <fieldset class="eval-type-select">
+      <legend>Evaluation contract</legend>
+      <label class="radio-label">
+        <input type="radio" name="evaluation_type" value="legacy" id="evaluation_type_legacy"
+               {% if evaluation_type != "operation_aware" %}checked{% endif %}>
+        Legacy — <code>POST /v1/evaluate</code>
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="evaluation_type" value="operation_aware" id="evaluation_type_operation_aware"
+               {% if evaluation_type == "operation_aware" %}checked{% endif %}>
+        Operation-aware — <code>POST /v1/evaluate/operation-aware</code>
+      </label>
+      <p class="muted">
+        Chooses which authorization contract this submission targets — a
+        separate choice from preview/gateway submission below. Legacy is the
+        default and its behavior is unchanged.
+      </p>
+    </fieldset>
 
-    <label for="subject_type">Subject type</label>
-    <input id="subject_type" name="subject_type" type="text" value="{{ values.subject_type }}"
-           placeholder="e.g. user" autocomplete="off">
+    {% set legacy_fields_disabled = evaluation_type == "operation_aware" %}
+    <fieldset id="legacy-only-fields" {% if legacy_fields_disabled %}disabled{% endif %}
+              class="{% if legacy_fields_disabled %}is-hidden{% endif %}">
+      <label for="subject_id">Subject ID</label>
+      <input id="subject_id" name="subject_id" type="text" value="{{ values.subject_id }}"
+             placeholder="e.g. operator-jane" autocomplete="off">
+
+      <label for="subject_type">Subject type</label>
+      <input id="subject_type" name="subject_type" type="text" value="{{ values.subject_type }}"
+             placeholder="e.g. user" autocomplete="off">
+    </fieldset>
+
+    {% if evaluation_type == "operation_aware" %}
+      <p class="notice">{{ operation_aware_context_notice }}</p>
+    {% endif %}
 
     <label for="action_verb">Action verb</label>
     <select id="action_verb" name="action_verb">
@@ -86,9 +114,12 @@
       composes. It is not the vocabulary authority.
     </p>
 
-    <label for="context">Context</label>
-    <textarea id="context" name="context" rows="3"
-              placeholder="optional, one key=value per line&#10;e.g. maintenance_window=true">{{ values.context }}</textarea>
+    <fieldset id="legacy-only-context" {% if legacy_fields_disabled %}disabled{% endif %}
+              class="{% if legacy_fields_disabled %}is-hidden{% endif %}">
+      <label for="context">Context</label>
+      <textarea id="context" name="context" rows="3"
+                placeholder="optional, one key=value per line&#10;e.g. maintenance_window=true">{{ values.context }}</textarea>
+    </fieldset>
 
     <div class="form-actions">
       <button type="submit" name="mode" value="preview">Build request preview</button>
@@ -129,7 +160,46 @@
     })();
   </script>
 
-  {% if preview_json %}
+  <script>
+    // Progressive enhancement: hides AND disables the legacy-only fields
+    // (subject/context — both <fieldset> elements) based on the
+    // evaluation-type radio buttons, so switching without a page reload
+    // feels immediate and so the browser will not submit their values while
+    // operation-aware is selected (a disabled form control is never part of
+    // the submitted form data — CSS visibility alone does not stop
+    // submission). Toggling `.disabled` on a <fieldset> disables every
+    // descendant control in one step. Switching back to legacy re-enables
+    // them without clearing whatever the user had typed.
+    //
+    // This is still only a UX nicety, not the enforcement boundary: with
+    // JavaScript disabled, the page falls back to whatever the server
+    // rendered for the last-submitted evaluation_type (see simulate.html's
+    // `legacy_fields_disabled` server-side conditional), and regardless of
+    // what the browser does or does not disable/hide, the server
+    // independently and unconditionally rejects a non-empty context,
+    // subject_id, or subject_type on every operation-aware submission (see
+    // simulator.build_operation_aware_simulation /
+    // simulator.OPERATION_AWARE_LEGACY_ONLY_FIELDS). No network access.
+    (function () {
+      var legacyRadio = document.getElementById("evaluation_type_legacy");
+      var oaRadio = document.getElementById("evaluation_type_operation_aware");
+      var legacyFields = document.getElementById("legacy-only-fields");
+      var legacyContext = document.getElementById("legacy-only-context");
+      if (!legacyRadio || !oaRadio || !legacyFields || !legacyContext) return;
+      function update() {
+        var hide = oaRadio.checked;
+        legacyFields.classList.toggle("is-hidden", hide);
+        legacyContext.classList.toggle("is-hidden", hide);
+        legacyFields.disabled = hide;
+        legacyContext.disabled = hide;
+      }
+      legacyRadio.addEventListener("change", update);
+      oaRadio.addEventListener("change", update);
+      update();
+    })();
+  </script>
+
+  {% if evaluation_type == "legacy" and preview_json %}
     <section class="preview" aria-label="Normalized request preview">
       <h2>Normalized request preview</h2>
       <p class="muted">
@@ -168,6 +238,7 @@
     </section>
   {% endif %}
 
+  {% if evaluation_type == "legacy" %}
   <section class="gateway-eval" aria-label="Gateway evaluation">
     <h2>Gateway evaluation</h2>
     <p class="notice">{{ identity_notice }}</p>
@@ -261,6 +332,192 @@
       {% endif %}
     {% endif %}
   </section>
+  {% endif %}
+
+  {% if evaluation_type == "operation_aware" %}
+  <section class="gateway-eval oa-eval" aria-label="Operation-aware evaluation">
+    <h2>Operation-aware evaluation</h2>
+    <p class="notice">{{ operation_aware_context_notice }}</p>
+    <p class="notice warn-notice">{{ operation_aware_no_eval_notice }}</p>
+
+    {% if not gateway_configured %}
+      <p class="notice warn-notice">
+        Gateway evaluation is not configured.
+        Set <code>GATEWAY_BASE_URL</code> and the required gateway credentials to
+        enable live gateway-backed operation-aware evaluation.
+      </p>
+    {% elif not gateway_token_present %}
+      <p class="notice warn-notice">
+        Gateway evaluation requires a configured server-side bearer token.
+      </p>
+    {% else %}
+      <p class="muted">
+        Live evaluation is configured against <code>{{ gateway_base_url }}</code>.
+        Use “Evaluate through basis-gateway” above to submit this request to
+        <code>POST /v1/evaluate/operation-aware</code>. The console displays
+        the gateway's response and does not reinterpret it.
+      </p>
+    {% endif %}
+
+    {% if oa_request_summary %}
+      <article class="gw-response">
+        <div class="record-head">
+          <h3>Submitted request</h3>
+          <span class="tag">submitted input</span>
+          {% if oa_preview_only %}<span class="badge">preview — not yet evaluated</span>{% endif %}
+        </div>
+        <p class="muted">
+          Exactly what would be (or was) sent to
+          <code>POST /v1/evaluate/operation-aware</code>. These are the values
+          the console submitted, not a gateway confirmation of them — the
+          gateway may accept, reject, or (for a caller-supplied request id,
+          not exposed in this milestone) default any of them independently.
+          No subject and no context are ever part of this request.
+        </p>
+        <dl class="kv">
+          <dt>Action</dt><dd class="mono">{{ oa_request_summary.action }}</dd>
+          <dt>Resource type</dt>
+          <dd class="mono">{% if oa_request_summary.resource_type %}{{ oa_request_summary.resource_type }}{% else %}<span class="muted">—</span>{% endif %}</dd>
+          <dt>Resource ID</dt>
+          <dd class="mono">{% if oa_request_summary.resource_id %}{{ oa_request_summary.resource_id }}{% else %}<span class="muted">— (domain-level request)</span>{% endif %}</dd>
+        </dl>
+      </article>
+    {% endif %}
+
+    {% if oa_preview_only %}
+      <p class="notice warn-notice">
+        This is a request preview only. No call was made to
+        <code>basis-gateway</code>, no evaluation has occurred, and no
+        allow / deny / not_applicable decision exists for this submission.
+      </p>
+    {% endif %}
+
+    {% if oa_presentation %}
+      {% set p = oa_presentation %}
+      <article class="gw-response">
+        <div class="record-head">
+          <h3>Evaluation result</h3>
+          <span class="gw-status gw-{{ p.evaluation_result.client_status.value }}">{{ p.evaluation_result.client_status.value | replace("_", " ") }}</span>
+          <span class="tag">returned evidence</span>
+        </div>
+        <p class="muted">
+          Returned by <code>basis-gateway</code>. The console relays this
+          response as-is; it never reevaluates, recomputes, or reinterprets it.
+        </p>
+        {% if p.transport.status_explanation.present %}
+          <p class="notice {% if p.evaluation_result.client_status.value == 'evaluation_completed' %}ok-notice{% elif p.evaluation_result.client_status.value in ('evaluation_failed', 'contract_invalid', 'unavailable', 'gateway_error', 'unauthorized', 'request_rejected', 'evaluator_unavailable', 'capability_unavailable') %}warn-notice{% endif %}">
+            <em>Console note:</em> {{ p.transport.status_explanation.value }}
+          </p>
+        {% endif %}
+
+        <dl class="kv">
+          {% if p.evaluation_result.http_status.present %}
+            <dt>HTTP status</dt><dd class="mono">{{ p.evaluation_result.http_status.value }}</dd>
+          {% endif %}
+          {% if p.evaluation_result.kernel_evaluation_status.applicable %}
+            <dt>Kernel evaluation status</dt>
+            <dd>{% if p.evaluation_result.kernel_evaluation_status.present %}<span class="mono">{{ p.evaluation_result.kernel_evaluation_status.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+          {% endif %}
+          {% if p.evaluation_result.outcome.applicable %}
+            <dt>Kernel outcome</dt>
+            <dd>
+              {% if p.evaluation_result.outcome.present %}
+                <span class="outcome {{ p.evaluation_result.outcome.value }}">{{ p.evaluation_result.outcome.value | replace("_", " ") }}</span>
+              {% else %}<span class="muted">not provided</span>{% endif %}
+            </dd>
+          {% endif %}
+          {% if p.evaluation_result.disposition.applicable %}
+            <dt>Gateway disposition</dt>
+            <dd>{% if p.evaluation_result.disposition.present %}<span class="mono">{{ p.evaluation_result.disposition.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+          {% endif %}
+          {% if p.evaluation_result.failure_reason.applicable %}
+            <dt>Failure reason</dt>
+            <dd>{% if p.evaluation_result.failure_reason.present %}<span class="mono">{{ p.evaluation_result.failure_reason.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+          {% endif %}
+          {% if p.evaluation_result.failure_reason_note.present %}
+            <dt>Failure explanation</dt><dd class="muted"><em>Console note:</em> {{ p.evaluation_result.failure_reason_note.value }}</dd>
+          {% endif %}
+          {% if p.evaluation_result.reason_code.applicable %}
+            <dt>Reason code</dt>
+            <dd>{% if p.evaluation_result.reason_code.present %}<span class="mono">{{ p.evaluation_result.reason_code.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+          {% endif %}
+          {% if p.evaluation_result.explanation.applicable %}
+            <dt>Evaluator explanation</dt>
+            <dd>{% if p.evaluation_result.explanation.present %}{{ p.evaluation_result.explanation.value }}{% else %}<span class="muted"><em>Console note:</em> {{ p.evaluation_result.explanation_note.value }}</span>{% endif %}</dd>
+          {% endif %}
+        </dl>
+
+        {% if p.policy_bundle.bundle_id.applicable %}
+          <div class="oa-bundle">
+            <h4>Policy bundle</h4>
+            <dl class="kv">
+              <dt>Bundle ID</dt><dd>{% if p.policy_bundle.bundle_id.present %}<span class="mono">{{ p.policy_bundle.bundle_id.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+              <dt>Bundle version</dt><dd>{% if p.policy_bundle.bundle_version.present %}<span class="mono">{{ p.policy_bundle.bundle_version.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+              {% if p.policy_bundle.applicability_note.present %}
+                <dt>Applicability</dt><dd class="muted"><em>Console note:</em> {{ p.policy_bundle.applicability_note.value }}</dd>
+              {% endif %}
+            </dl>
+          </div>
+        {% endif %}
+
+        <div class="oa-evidence">
+          <h4>Evidence and correlation</h4>
+          <dl class="kv">
+            {% if p.evidence.request_id.applicable %}
+              <dt>Request ID (returned)</dt><dd>{% if p.evidence.request_id.present %}<span class="mono">{{ p.evidence.request_id.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+            {% endif %}
+            <dt>Correlation ID</dt><dd>{% if p.evidence.correlation_id.present %}<span class="mono">{{ p.evidence.correlation_id.value }}</span>{% else %}<span class="muted">not returned</span>{% endif %}</dd>
+            {% if p.evidence.trace_id.applicable %}
+              <dt>Trace ID</dt><dd>{% if p.evidence.trace_id.present %}<span class="mono">{{ p.evidence.trace_id.value }}</span>{% else %}<span class="muted">not provided</span>{% endif %}</dd>
+            {% endif %}
+            <dt>Evaluation trace</dt>
+            <dd class="muted"><span class="tag">future capability</span> {{ p.evidence.evaluation_trace.description }}</dd>
+          </dl>
+        </div>
+
+        {% for note in p.identity_processing_notes %}
+          <p class="muted"><em>Console note (processing stage):</em> {{ note.value }}</p>
+        {% endfor %}
+
+        {% if p.transport.error_code.present or p.transport.error_message.present %}
+          <div class="oa-error">
+            <h4>Gateway error</h4>
+            <p class="muted">
+              {% if p.transport.error_code.present %}{{ p.transport.error_code.value }}{% endif %}
+              {% if p.transport.error_message.present %} — {{ p.transport.error_message.value }}{% endif %}
+            </p>
+          </div>
+        {% endif %}
+
+        {% if p.transport.detail.present %}
+          <p class="muted"><em>Console note:</em> {{ p.transport.detail.value }}</p>
+        {% endif %}
+
+        {% if p.transport.diagnostics %}
+          <details class="raw-response">
+            <summary>Redacted diagnostic response</summary>
+            <p class="muted">
+              Diagnostic material only, already redacted — never evaluator
+              evidence. Shown because no governed response body exists for
+              this result.
+            </p>
+            {% if oa_diagnostics_json %}
+              <pre class="json"><code>{{ oa_diagnostics_json }}</code></pre>
+            {% endif %}
+            {% if oa_diagnostics_headers_json %}
+              <pre class="json"><code>{{ oa_diagnostics_headers_json }}</code></pre>
+            {% endif %}
+          </details>
+        {% endif %}
+
+        <p class="muted">
+          See how this decision and its correlation ID are presented in the
+          <a href="/audit">Audit Explorer</a>.
+        </p>
+      </article>
+    {% endif %}
+  </section>
+  {% endif %}
 
   <section class="field-help">
     <h2>What each field means</h2>

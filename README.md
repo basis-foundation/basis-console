@@ -113,6 +113,21 @@ subject identity from the verified token and rejects unauthenticated calls; obta
 one out-of-band — the console does no OIDC login and issues no tokens. When the
 token is absent, the simulator stays preview-only and says so.
 
+**Operation-aware evaluation.** The Decision Simulator also offers a separate,
+explicit "Operation-aware" evaluation contract alongside the legacy one above —
+select it with the evaluation-contract control on the same page. It submits only
+action / resource type / resource ID (no subject, no context — the operation-aware
+endpoint has no field for either) to the gateway's `POST /v1/evaluate/operation-aware`
+and relays the kernel's governed result verbatim: evaluation status, outcome
+(allow / deny / not_applicable, kept distinct — `not_applicable` is never shown as
+a plain "denied"), failure reason for a governed evaluation failure, policy bundle
+identity, reason code, evaluator explanation, and correlation/trace IDs, each
+labelled by whether it is what you submitted, what the gateway returned, or a
+console-authored note. Preview mode for this contract shows the exact request that
+would be sent without ever calling the gateway or fabricating a decision. Both
+presentation modes (below) use this exact same workflow — this is not a
+Training-mode-only feature.
+
 ```bash
 GATEWAY_BASE_URL=http://127.0.0.1:8000 \
 GATEWAY_BEARER_TOKEN="<token-obtained-out-of-band>" \
@@ -177,7 +192,7 @@ Nothing is hardcoded to a public URL or SaaS endpoint.
 | `BASIS_CONSOLE_MODE`      | `operator`      | Presentation mode: `operator` (default) or `training` (adds educational banners/callouts). UX only — same application in both modes, no behavior change. Invalid values fail startup cleanly. |
 | `GATEWAY_BASE_URL`        | _(unset)_       | Base URL of `basis-gateway`. Unset → `not_configured`, sample-only mode, no network call. No public URL is baked in. |
 | `GATEWAY_TIMEOUT_SECONDS` | `2.0`           | Timeout for gateway `/health`, `/ready`, and `/v1/evaluate` calls. Must be > 0. |
-| `GATEWAY_BEARER_TOKEN`    | _(unset)_       | Optional **server-side** token enabling gateway-backed evaluation. Sent only as `Authorization: Bearer <token>` to `/v1/evaluate`; **never** displayed, logged, or rendered. For local/dev/operator-controlled use. |
+| `GATEWAY_BEARER_TOKEN`    | _(unset)_       | Optional **server-side** token enabling gateway-backed evaluation. Sent only as `Authorization: Bearer <token>` to `/v1/evaluate` or `/v1/evaluate/operation-aware`, depending on the selected evaluation contract; **never** displayed, logged, or rendered. For local/dev/operator-controlled use. |
 | `SERVICE_NAME`            | `basis-console` | Service name reported by health/readiness.                     |
 
 The console is designed to sit behind a reverse proxy (Nginx, Caddy, or a cloud
@@ -196,7 +211,7 @@ controls — see [`SECURITY.md`](SECURITY.md).
 | GET    | `/workspace`         | HTML | Operator Workspace / Overview — orientation across all areas. | live + sample |
 | GET    | `/policies`          | HTML | Policy viewer.                                               | sample |
 | GET    | `/simulate`          | HTML | Decision-simulator request builder (optional `?example=`).  | preview |
-| POST   | `/simulate`          | HTML | Preview mode (build request shape) or gateway mode (`mode=gateway`, forward to `/v1/evaluate`). | preview + live |
+| POST   | `/simulate`          | HTML | Preview mode (build request shape) or gateway mode (`mode=gateway`), for either the legacy (`evaluation_type=legacy`, default, `/v1/evaluate`) or operation-aware (`evaluation_type=operation_aware`, `/v1/evaluate/operation-aware`) contract. | preview + live |
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios.                                 | sample |
 | GET    | `/audit`             | HTML | Audit Explorer — decision events + gateway evidence.         | sample (+ live via Simulate) |
 | GET    | `/identity`          | HTML | Identity & Access Explorer.                                  | sample |
