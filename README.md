@@ -290,6 +290,10 @@ privately per [`SECURITY.md`](SECURITY.md).
 
 - [`docs/architecture.md`](docs/architecture.md) — console boundaries, invariants,
   and phase notes.
+- [`docs/implementation/operation-aware-console-integration-plan.md`](docs/implementation/operation-aware-console-integration-plan.md)
+  — planning-only integration plan for consuming `basis-gateway`'s
+  `POST /v1/evaluate/operation-aware`. Status: **planning**; no operation-aware
+  runtime code has been implemented yet.
 - [`docs/releases/v0.1.0.md`](docs/releases/v0.1.0.md) — release notes for the
   `v0.1.0` candidate.
 - [`docs/release-checklist.md`](docs/release-checklist.md) — what must be true to
