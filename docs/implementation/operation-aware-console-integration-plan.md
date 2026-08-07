@@ -605,6 +605,19 @@ model (e.g. a `source: Literal["returned_evidence", "console_explanation",
 "future_capability"]` tag on each renderable item), not left as an informal
 convention for template authors to remember.
 
+**Correction (post-PR3 implementation):** the table above only enumerates
+response-side ownership and does not cover the request-summary values the
+console itself submits. PR3's implementation surfaced that a fourth,
+distinct category is required: `submitted_input`, for the exact
+console-submitted `action`/`resource_type`/`resource_id`/`request_id`
+values. These are never `returned_evidence` — the gateway may accept,
+reject, or (for `request_id`) silently default any of them, so presenting a
+submitted value as if it were a gateway confirmation would misattribute its
+provenance. The shipped vocabulary is therefore
+`Literal["submitted_input", "returned_evidence", "console_explanation",
+"future_capability"]`; this document's illustrative three-value `Literal`
+above should be read as superseded by that four-value set.
+
 ---
 
 ## 10. Legacy Evaluation Compatibility

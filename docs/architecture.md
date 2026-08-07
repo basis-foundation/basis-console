@@ -940,3 +940,103 @@ evaluation remains entirely unreachable from the console's UI until a later
 phase builds the shared presentation model and wires it into `/simulate` —
 see `docs/implementation/operation-aware-console-integration-plan.md`, PRs
 3–6, for that sequence.
+
+## Phase 17 operation-aware presentation model
+
+Phase 17 (integration-plan PR 3) adds one new module,
+`operation_aware_presentation.py`, containing a shared, mode-independent
+presentation model consumed identically by both Operator and Training modes
+once a later phase wires it into `/simulate`. **This phase adds a pure,
+unit-tested transformation only** — no route, template, navigation entry, or
+simulator control calls it yet; Operator mode and Training mode remain
+completely unaffected. The module performs no gateway call and no I/O of any
+kind: `build_operation_aware_presentation(request, result)` consumes PR 2's
+already-typed, already-redacted `OperationAwareEvaluationRequest` /
+`OperationAwareEvaluationResult` and returns one frozen
+`OperationAwarePresentation` object.
+
+### New module: `operation_aware_presentation.py`
+
+Kept as a flat, top-level module — consistent with the repository's existing
+presentation-oriented modules (`workspace.py`, `diagnostics.py`,
+`simulator.py`) — rather than introducing a new `presentation` package for a
+single module. It defines:
+
+- `ContentSource` — the closed provenance vocabulary the integration plan's
+  §9 requires be encoded directly rather than left as an informal template
+  convention. Four values, not three: implementation surfaced a distinction
+  the plan's §9 table did not separate out — the exact values the console
+  *submitted* in its request are not gateway evidence, even though both are
+  equally exact and equally never console-invented. Collapsing them would let
+  a submitted `resource_id` or `action` be presented as if the gateway had
+  confirmed or returned it, when the gateway may in fact reject it, ignore
+  it, or (for `request_id`) silently default it. The four values:
+  `SUBMITTED_INPUT` (an exact value from the typed request — used only for
+  `RequestSummarySection`'s four fields), `RETURNED_EVIDENCE` (an exact value
+  from the typed gateway result), `CONSOLE_EXPLANATION`
+  (`basis-console`-authored prose, including `OperationAwareEvaluationResult
+  .detail`, which is itself documented as a console-side note), and
+  `FUTURE_CAPABILITY` (used only for the not-yet-returned embedded
+  `evaluation_trace`).
+- `PresentationContentItem` — a frozen, narrowly-typed content unit (`key`,
+  `label`, `value`, `source`, `applicable`, `present`, `description`)
+  replacing what could otherwise have been an unbounded dict. `applicable`
+  and `present` together distinguish three states a template must render
+  differently: the concept doesn't exist in this evaluation state at all
+  (`applicable=False`), it exists and was validly returned as null/absent
+  (`applicable=True, present=False`), or a real value is available
+  (`applicable=True, present=True`).
+- Five typed sections — `RequestSummarySection`, `EvaluationResultSection`,
+  `PolicyBundleSection`, `EvidenceSection`, `TransportSection` — plus
+  `RedactedDiagnostics` (already-redacted diagnostic material for
+  generic/contract-invalid results, retained without reinterpretation) and
+  the top-level `OperationAwarePresentation` that groups them, alongside a
+  small tuple of `identity_processing_notes`.
+- `build_operation_aware_presentation(request, result)` — the single pure
+  builder. Raises `PresentationBuildError` only when `result.status` and
+  `result.response`'s presence disagree with
+  `OperationAwareEvaluationResult`'s own documented invariant — a condition
+  a real gateway-client result can never produce, so this is a contract-drift
+  guard, not a data case to render.
+
+### Semantic preservation
+
+`ALLOW`/`DENY`/`NOT_APPLICABLE` are read from `response.outcome` and rendered
+as three distinct values, never collapsed into one. `NOT_APPLICABLE` is never
+relabelled `deny`: its `PolicyBundleSection.applicability_note` (tagged
+`CONSOLE_EXPLANATION`) explains the fail-closed HTTP/disposition behavior
+without altering the preserved `outcome` value, and bundle identity remains
+visible exactly as on `ALLOW`/`DENY`. A governed evaluation failure
+(`evaluation_status=failed`) leaves `outcome` `applicable=False` and is never
+displayed as a policy decision — verified for every one of the six governed
+failure reasons, including on HTTP `400`/`503`/`500`, and distinguished by
+test from the corresponding *generic* pre-kernel rejection on the same HTTP
+status (`REQUEST_REJECTED`/`EVALUATOR_UNAVAILABLE`/`GATEWAY_ERROR`), which
+carries no governed fields at all. Null `explanation`, absent `reason_code`,
+and absent `bundle_id`/`bundle_version`/`trace_id`/`correlation_id` are all
+preserved as first-class `applicable=True, present=False` states — never
+synthesized, never treated as malformed.
+
+### Boundaries preserved
+
+No `basis-core` import (covered by the existing repository-wide
+`test_no_basis_core_boundary.py` sweep, which now also covers this file, plus
+a file-scoped reassertion in the new `test_operation_aware_presentation_boundary.py`).
+No gateway HTTP call — the module never imports `GatewayClient` or `httpx`.
+No subject or producer-trust inference — the model has no subject field
+anywhere, and its one identity-related note (`identity_processing_notes`,
+shown only when a governed response exists) is tagged `CONSOLE_EXPLANATION`
+and states plainly that it describes a gateway processing stage, not a
+per-request result. No console-mode dependency: the builder takes exactly
+`(request, result)`, no presentation dataclass has a mode-shaped field, and
+the module imports nothing from `basis_console.config`.
+
+### What Phase 17 does not do
+
+No route, no template, no navigation entry, no simulator control, no
+Operator-mode or Training-mode rendering decision, no evaluation-type
+selector, and no live-gateway integration test. Operation-aware evaluation
+remains entirely unreachable from the console's UI until PR 4 wires this
+model into `/simulate` — see
+`docs/implementation/operation-aware-console-integration-plan.md`, PRs 4–6,
+for that sequence.
