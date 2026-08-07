@@ -126,7 +126,13 @@ labelled by whether it is what you submitted, what the gateway returned, or a
 console-authored note. Preview mode for this contract shows the exact request that
 would be sent without ever calling the gateway or fabricating a decision. Both
 presentation modes (below) use this exact same workflow — this is not a
-Training-mode-only feature.
+Training-mode-only feature. Training mode additionally renders a
+Training-only educational panel alongside this same shared result — the
+conceptual BASIS processing flow, a provenance legend, an authorization
+vocabulary glossary, and an explanation of whichever outcome, failure, or
+absent-evidence state the shared result actually contains. This is
+explanatory markup only: it never changes the request, the gateway call, or
+the result itself.
 
 ```bash
 GATEWAY_BASE_URL=http://127.0.0.1:8000 \
@@ -155,8 +161,11 @@ make run                                   # operator is the default
 per-page "What this page teaches" callout, and a BASIS architecture explanation
 (console observes/inspects/submits/explains, gateway enforces, core evaluates,
 adapters normalize, identity is the future `basis-identity` service, and
-deploy/demo/topology are future layers). Training mode is **not** an operator
-view.
+deploy/demo/topology are future layers). On the Decision Simulator's
+operation-aware flow, it additionally adds a dedicated educational panel
+(ecosystem flow, provenance legend, vocabulary glossary, and an explanation of
+the actual result) — see "Operation-aware evaluation" above. Training mode is
+**not** an operator view.
 
 ```bash
 BASIS_CONSOLE_MODE=training make run

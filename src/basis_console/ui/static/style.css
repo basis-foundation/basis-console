@@ -416,6 +416,17 @@ details.audit-event h3 {
 .training-callout ul { margin: 0; padding-left: 1.2rem; color: var(--muted); }
 .training-callout li { margin: 0.2rem 0; }
 
+/* Operation-aware Training-mode educational enrichment (PR 5). Reuses
+   .training-callout as the outer container; these rules only add spacing
+   between the additional <details>/<div> subsections and keep their tables
+   legible — no new color semantics or visual redesign. */
+.oa-training-content .oa-training-section { margin-top: 1rem; }
+.oa-training-content details.oa-training-section summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.oa-training-content .oa-training-section table.grid { margin-top: 0.5rem; }
+.oa-training-content .oa-training-section .kv { margin-top: 0.5rem; }
+.oa-training-content .oa-training-section h4 { margin: 0 0 0.3rem; color: var(--text); font-size: 0.9rem; }
+.oa-training-content .oa-training-section ul { color: var(--muted); }
+
 /* Gateway Diagnostics connection-state glossary (Phase 14). */
 .state-glossary { margin: 0.75rem 0 1.25rem; }
 .state-glossary summary { cursor: pointer; color: var(--muted); }
