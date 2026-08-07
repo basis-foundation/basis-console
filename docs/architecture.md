@@ -828,7 +828,7 @@ later without changing the contract.
 | GET    | `/workspace`         | HTML | Operator Workspace / Overview — orientation across all areas (read-only). |
 | GET    | `/policies`          | HTML | Policy viewer placeholder (sample data, read-only).          |
 | GET    | `/simulate`          | HTML | Decision-simulator request builder (optional `?example=`).   |
-| POST   | `/simulate`          | HTML | Preview mode: validate + render request shape. Gateway mode (`mode=gateway`): forward to gateway `/v1/evaluate` and display the response.|
+| POST   | `/simulate`          | HTML | Two independent axes: submission (`mode=preview` validates + renders a request-shape preview; `mode=gateway` submits live) and evaluation contract (`evaluation_type=legacy`, default, targets `/v1/evaluate`; `evaluation_type=operation_aware` targets `/v1/evaluate/operation-aware` via the shared presentation model — Phase 18). |
 | GET    | `/simulate/examples` | HTML | Sample simulator scenarios (read-only).                      |
 | GET    | `/audit`             | HTML | Audit Explorer — decision events + gateway evidence (sample data, read-only). |
 | GET    | `/identity`          | HTML | Identity & Access Explorer (sample data, read-only).        |
@@ -1040,3 +1040,183 @@ remains entirely unreachable from the console's UI until PR 4 wires this
 model into `/simulate` — see
 `docs/implementation/operation-aware-console-integration-plan.md`, PRs 4–6,
 for that sequence.
+
+## Phase 18 shared operation-aware simulator integration
+
+Phase 18 (integration-plan PR 4) wires PR 2's gateway-client layer and PR 3's
+presentation model into the existing Decision Simulator (`/simulate`),
+completing the first end-to-end operation-aware evaluation path reachable
+from the console's UI. It adds no new route, no second `GatewayClient`, and
+no second `/simulate` implementation — the existing GET/POST handlers gain
+one new, explicit axis alongside the existing preview/gateway submission
+axis, and the same code path renders identically in Operator and Training
+modes from this phase onward. **This phase does not add Training-mode
+educational enrichment** — that remains PR 5 scope; every Operator/Training
+difference here is limited to the pre-existing training banner/callout
+mechanism, never to the operation-aware controls, request, gateway call, or
+result content.
+
+### Two independent axes
+
+The simulator now has two independent selections, never conflated:
+
+- **Submission behavior** (unchanged): `mode=preview` (default) / `mode=gateway`.
+- **Evaluation contract** (new): `evaluation_type=legacy` (default,
+  absent-compatible) / `evaluation_type=operation_aware`, added as
+  `simulator.EvaluationType`, a closed `str` `Enum` consistent with the
+  repository's existing operation-aware enum style
+  (`operation_aware_models.py`). `simulator.parse_evaluation_type()` treats an
+  absent or blank field as legacy (so every link, bookmark, and test that
+  predates this field is unaffected) and a present-but-unrecognized value as
+  an explicit validation failure — never a silent fallback and never a
+  gateway call.
+
+### Operation-aware request building (`simulator.py`)
+
+`simulator.build_operation_aware_simulation()` is a new, pure, I/O-free
+sibling of `build_simulation()` that builds a typed
+`OperationAwareEvaluationRequest`. It reuses — rather than reimplements — the
+legacy path's action-verb/resource-type vocabulary and
+`build_gateway_request()`'s composition grammar (Section 4.4 of the
+integration plan: the two endpoints' grammar is identical), and reads only
+`action_verb` / `resource_type` / `resource_id` from the submitted form. A
+non-empty value for any field in the explicit, known
+`OPERATION_AWARE_LEGACY_ONLY_FIELDS` allowlist (`context`, `subject_id`,
+`subject_type` — never a rule that rejects arbitrary/unknown POST keys) is
+rejected unconditionally and checked first, independent of whatever the
+browser form renders, disables, or a dev-tools edit re-enables — the
+operation-aware endpoint has no field for caller-supplied context (Section
+4.5) or for a caller-supplied subject (the gateway derives identity
+exclusively from the verified Bearer token), so this is enforced
+server-side regardless of client behavior, with every offending field
+reported (not just the first). No caller-supplied `request_id`, subject
+field, or trusted-producer-only field (`location`,
+`device`, `protocol_context`, `safety_context`, `environment_context`,
+`risk_context`, `operation_intent`, `identity_evidence_reference`,
+`adapter_evidence_reference`) is ever read from the form or settable on the
+built request — the typed request model has no field for any of them, so an
+unrestricted form dictionary cannot smuggle one through.
+
+This module now imports the frozen `OperationAwareEvaluationRequest`
+dataclass from `basis_console.gateway.operation_aware_models` — still no I/O
+capability and no network code, only the typed model needed to build the
+value `simulator.py` returns.
+
+### Route integration (`ui/views.py`)
+
+`POST /simulate` parses `evaluation_type` once and branches:
+
+- **Legacy** (`evaluation_type=legacy` or absent): the existing Phase 4/6
+  code path, byte-for-byte unchanged.
+- **Operation-aware, preview**: validates and builds the typed request via
+  `build_operation_aware_simulation()`, then renders it as a request-shape
+  preview only. No `GatewayClient` call is made, and no
+  `OperationAwareEvaluationResult` — real or fabricated — is ever
+  constructed for a preview.
+- **Operation-aware, gateway**: calls
+  `GatewayClient.evaluate_operation_aware()` exactly once with the built
+  request, passes the request and the returned typed result straight into
+  `build_operation_aware_presentation()` unchanged, and renders the returned
+  `OperationAwarePresentation`. The route never parses raw gateway JSON,
+  never imports `httpx`, and never reconstructs outcome/disposition/failure
+  semantics itself — those decisions live in `operation_aware_presentation.py`
+  and are consumed here only through its already-built content items.
+
+An invalid `evaluation_type` value is rejected before either builder runs:
+no gateway call, no local evaluation, whatever was submitted is echoed back
+so the form can be corrected.
+
+### Template integration (`simulate.html`)
+
+The existing `/simulate` form gains an explicit, always-visible
+`evaluation_type` radio selection above the shared action/resource controls.
+Design decision: rather than a second page or a fully separate form, the
+legacy-only subject/context controls are wrapped in server-rendered
+`<fieldset>` containers (`#legacy-only-fields`, `#legacy-only-context`, not
+plain `<div>`s) whose visibility **and enabled state** are both driven by the
+currently-rendered `evaluation_type`. When operation-aware is selected, the
+server renders each fieldset `disabled` (which, per the HTML `<fieldset
+disabled>` semantics, disables every descendant control in one step — a
+disabled control is never included in a submitted form's data, unlike a
+merely CSS-hidden one) as well as visually hidden (`class="is-hidden"`); when
+legacy is selected, neither attribute is rendered and the controls are fully
+enabled. A small progressive-enhancement script toggles both `classList` and
+each fieldset's `.disabled` property together immediately on radio change,
+for a same-page feel without a reload, and without ever clearing a user's
+already-typed legacy values. **Correctness never depends on the browser or
+the script**: `simulator.build_operation_aware_simulation()` unconditionally
+rejects a non-empty value for any of `simulator.OPERATION_AWARE_LEGACY_ONLY_FIELDS`
+(`context`, `subject_id`, `subject_type` — an explicit known-field allowlist,
+never a rule that rejects arbitrary unknown POST keys) regardless of what the
+DOM shows, disables, or a browser dev-tools edit re-enables — this is the
+actual enforcement boundary, and a crafted non-empty value for any of the
+three is rejected with the established console validation response (no
+gateway call, no request built, no identity inferred) on both preview and
+gateway submissions. The legacy "Normalized request preview" and "Gateway
+evaluation" sections are now gated to `evaluation_type == "legacy"`; a new,
+parallel "Operation-aware evaluation" section renders only for
+`evaluation_type == "operation_aware"`, reusing the existing `.gateway-eval`/
+`.gw-response`/`.kv`/`.badge`/`.tag`/`.outcome` styling (one new rule,
+`.outcome.not_applicable`, keeps that outcome visually distinct from `deny`).
+
+### Minimal, semantically accurate rendering
+
+The operation-aware section renders, strictly from `OperationAwarePresentation`,
+without reevaluating or recomputing any of it:
+
+- **Submitted request** — action / resource type / resource ID, explicitly
+  tagged `submitted input` and, in preview mode, labelled "preview — not yet
+  evaluated." Never labelled as returned evidence.
+- **Evaluation result** (gateway mode only) — client status, HTTP status,
+  kernel evaluation status, kernel outcome, gateway disposition, failure
+  reason (plus its one-line console-authored note), reason code, and
+  evaluator explanation (or, when null, the console-authored "No additional
+  evaluator explanation was provided." note) — each rendered only when
+  `PresentationContentItem.applicable`, and distinguished from a real value
+  by `.present` rather than by blank space.
+- **Policy bundle** — bundle ID/version, preserved on `NOT_APPLICABLE` and on
+  a governed failure exactly as on `ALLOW`/`DENY`, plus the
+  `NOT_APPLICABLE`-only applicability note explaining the fail-closed HTTP
+  behavior without ever relabelling the outcome itself.
+- **Evidence and correlation** — request ID (returned), correlation ID,
+  trace ID, and the `evaluation_trace` future-capability row (labelled
+  `future capability`, never implying a trace exists today).
+- **Transport/diagnostics** — client-level status explanation, error
+  code/message, console diagnostic note, and — only when no governed
+  response exists — the already-redacted raw diagnostic body/headers,
+  explicitly labelled as diagnostic material, never evaluator evidence.
+
+Provenance is made visible through text, not color alone: `submitted input`
+and `returned evidence` tags reuse the existing `.tag` badge style, and every
+console-authored line is prefixed "Console note:" in the rendered HTML — so
+the four-category distinction from PR 3 survives into the rendered page
+without a new legend beyond the section's own two introductory notices.
+
+### Mode independence
+
+Operator and Training modes call the identical route function, build the
+identical `OperationAwareEvaluationRequest`, call
+`GatewayClient.evaluate_operation_aware()` the same single time, and render
+the identical `OperationAwarePresentation` — nothing in `views.py` or
+`simulator.py` branches on `console_mode`/`is_training_mode` for this flow.
+`tests/test_operation_aware_mode_parity.py` extends `test_console_mode.py`'s
+existing parity discipline to prove this for the selector controls, the
+submitted request body, and one live outcome from each response category
+(allow, not_applicable, governed failure, generic/transport failure).
+
+### Legacy compatibility
+
+Every existing simulator behavior is unchanged: the default GET, a POST
+without an `evaluation_type` field, legacy preview, legacy gateway
+evaluation, and legacy response rendering all behave exactly as before Phase
+18, verified by the full pre-existing test suite passing unmodified alongside
+the new tests.
+
+### What Phase 18 does not do
+
+No Training-mode educational enrichment beyond the pre-existing banner/callout
+mechanism (PR 5), no caller-editable `request_id`, no arbitrary
+operation-aware context, no trusted-producer-only field exposure, no trace
+viewer, no audit-event viewer, no policy editing, no schema/gateway/adapter
+changes, and no change to legacy `/v1/evaluate` behavior or its default
+status.

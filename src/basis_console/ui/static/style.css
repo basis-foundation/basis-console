@@ -159,6 +159,8 @@ code {
 .outcome { font-weight: 600; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.03em; }
 .outcome.allow { color: var(--allow); }
 .outcome.deny { color: var(--deny); }
+/* not_applicable is never a deny — kept visually distinct (Phase 18/PR 4). */
+.outcome.not_applicable { color: #d29922; }
 
 .sim-form { display: grid; grid-template-columns: 9rem 1fr; gap: 0.7rem 1rem; align-items: start; max-width: 620px; margin: 1.25rem 0; }
 .sim-form label { color: var(--muted); padding-top: 0.45rem; }
@@ -263,6 +265,52 @@ code {
 .raw-response { margin-top: 0.75rem; }
 .raw-response summary { cursor: pointer; color: var(--muted); }
 .raw-response pre.json { margin-top: 0.5rem; }
+
+/* Evaluation-type selector + operation-aware simulator integration (PR 4). */
+.eval-type-select {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem 0.9rem;
+  margin: 0 0 0.75rem;
+}
+.eval-type-select legend { padding: 0 0.4rem; color: var(--muted); font-size: 0.85rem; }
+.eval-type-select .radio-label { display: block; color: var(--text); padding: 0.15rem 0; }
+.eval-type-select .radio-label input { width: auto; margin-right: 0.4rem; }
+.eval-type-select p.muted { margin: 0.5rem 0 0; }
+
+/* These are <fieldset> elements (not <div>s) so that toggling the native
+   `disabled` property/attribute disables every descendant control in one
+   step — a <fieldset disabled> disables its whole contents. `display:
+   contents` strips the fieldset's own box (and default border/padding) so
+   its children keep participating directly in .sim-form's grid layout. */
+#legacy-only-fields,
+#legacy-only-context {
+  display: contents;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+#legacy-only-fields.is-hidden,
+#legacy-only-context.is-hidden {
+  display: none;
+}
+#legacy-only-fields:disabled label,
+#legacy-only-context:disabled label,
+#legacy-only-fields:disabled input,
+#legacy-only-context:disabled textarea {
+  opacity: 0.55;
+}
+
+.oa-bundle, .oa-evidence, .oa-error { margin-top: 0.85rem; }
+.oa-bundle h4, .oa-evidence h4, .oa-error h4 {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 /* Identity & Access Explorer (Phase 8). */
 .flow {

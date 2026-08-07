@@ -1,4 +1,4 @@
-"""Decision-simulator logic for basis-console (Phases 3, 6, and 7).
+"""Decision-simulator logic for basis-console (Phases 3, 6, 7, and PR 4).
 
 This module turns operator-supplied form fields into a *normalized request* — a
 plain data structure that shows the shape of the authorization request the
@@ -12,6 +12,21 @@ Boundary:
   - Building a preview is a pure, local, in-memory transformation of validated
     input; it makes no network call.
   - The console does not import ``basis-core`` or any kernel model.
+
+PR 4 addition — operation-aware request building
+──────────────────────────────────────────────────
+Alongside the legacy (``/v1/evaluate``) builder above, this module also builds
+the typed ``OperationAwareEvaluationRequest`` for
+``POST /v1/evaluate/operation-aware`` (see :func:`build_operation_aware_simulation`
+and :class:`EvaluationType`). This is still a pure, I/O-free transformation —
+only the *typed request model* is imported from
+``basis_console.gateway.operation_aware_models`` (a frozen dataclass module
+with no network code), never ``GatewayClient`` or any I/O capability. The
+operation-aware request surface is deliberately narrower than the legacy
+builder's: no subject, no context (Section 4.5 of the operation-aware console
+integration plan — the endpoint has no field for caller-supplied context), and
+only ``action`` / ``resource_type`` / ``resource_id`` from the shared
+action/resource composition grammar in :func:`build_gateway_request`.
 
 Composition is the gateway's job (Phase 7 alignment):
   ``basis-gateway`` is the action/resource composition boundary. The console
@@ -47,8 +62,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
+from basis_console.gateway.operation_aware_models import OperationAwareEvaluationRequest
 from basis_console.vocabulary import (
     ACTION_VERBS,
     RESOURCE_TYPES,
@@ -468,4 +485,262 @@ def build_simulation(raw: dict[str, str]) -> SimulationResult:
         errors=[],
         field_errors={},
         values=values,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Evaluation-type selection (PR 4)
+# ---------------------------------------------------------------------------
+#
+# Two independent axes exist on the simulator: submission behavior
+# (``mode=preview``/``mode=gateway`` — unchanged, see above) and evaluation
+# contract (this section). Neither overloads the other, and neither overloads
+# ``console_mode``/``is_training_mode`` — those remain a presentation-only
+# concern (docs/architecture.md, "Same application in both modes").
+
+
+class EvaluationType(str, Enum):
+    """Which authorization contract a simulator submission targets. Closed.
+
+    LEGACY            ``POST /v1/evaluate`` — the existing, default contract.
+                       Selecting it (or omitting the field) preserves every
+                       existing simulator behavior unchanged.
+    OPERATION_AWARE    ``POST /v1/evaluate/operation-aware`` (PR 4). A
+                       structurally distinct contract with its own request/
+                       response models (``basis_console.gateway
+                       .operation_aware_models``) and a narrower field
+                       surface (Section 4 of the operation-aware console
+                       integration plan) — never merged with the legacy
+                       request/response shape.
+    """
+
+    LEGACY = "legacy"
+    OPERATION_AWARE = "operation_aware"
+
+
+#: Preserves every existing simulator link, bookmark, and test that predates
+#: this field — an absent or blank ``evaluation_type`` always means legacy.
+DEFAULT_EVALUATION_TYPE = EvaluationType.LEGACY
+
+
+def parse_evaluation_type(raw: str | None) -> EvaluationType | None:
+    """Parse the ``evaluation_type`` form field.
+
+    Absent or blank returns :data:`DEFAULT_EVALUATION_TYPE` (legacy) — this is
+    what keeps old links/forms/tests that predate this field working
+    unchanged. A present-but-unrecognized value returns ``None`` so the
+    caller can fail validation safely (no gateway call, no local evaluation)
+    rather than silently guessing or falling back to legacy.
+    """
+    if raw is None or not raw.strip():
+        return DEFAULT_EVALUATION_TYPE
+    candidate = raw.strip().lower()
+    try:
+        return EvaluationType(candidate)
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Operation-aware request building (PR 4)
+# ---------------------------------------------------------------------------
+#
+# The operation-aware endpoint's action/resource composition grammar is
+# identical to the legacy path's (Section 4.4 of the integration plan), so
+# this reuses build_gateway_request rather than reimplementing the
+# dual-composition / typed-resource-id rejection rules. What differs is the
+# field surface: no subject (never was one on the gateway wire body — the
+# subject fields above are preview-only), and no context at all — the
+# operation-aware endpoint has no field for caller-supplied context (Section
+# 4.5), so this module never even offers a context control for it. A crafted
+# non-empty value for any legacy-only field is rejected defensively here,
+# independent of whatever the browser form does or does not render/disable,
+# so a hand-built POST cannot silently smuggle one through as
+# accept-and-discard. The browser additionally disables (not merely hides)
+# these controls when operation-aware is selected — see simulate.html — but
+# this server-side check is the actual enforcement boundary.
+
+OPERATION_AWARE_CONTEXT_REJECTED_MESSAGE = (
+    "Operation-aware evaluation does not accept a context value. The gateway's "
+    "operation-aware endpoint has no field for caller-supplied context — leave "
+    "this empty. (Context there is owned by trusted operation producers, not "
+    "the calling console session.)"
+)
+
+OPERATION_AWARE_SUBJECT_ID_REJECTED_MESSAGE = (
+    "Operation-aware evaluation does not accept a subject ID. The gateway "
+    "derives identity exclusively from its verified Bearer token — leave this "
+    "empty. (The subject fields above are preview-only fields the legacy path "
+    "displays for education; they are not part of the operation-aware request "
+    "surface at all.)"
+)
+
+OPERATION_AWARE_SUBJECT_TYPE_REJECTED_MESSAGE = (
+    "Operation-aware evaluation does not accept a subject type. The gateway "
+    "derives identity exclusively from its verified Bearer token — leave this "
+    "empty."
+)
+
+# The complete, explicit set of legacy-only fields the operation-aware path
+# must reject if submitted non-empty. This is an *allowlist* of known field
+# names — never a rule that rejects arbitrary/unknown POST keys — so unrelated
+# framework or future form fields are never accidentally rejected. Extend this
+# tuple (and the message map below) if the legacy form ever grows a new
+# preview-only identity field (e.g. subject roles/attributes); none exists in
+# the current simulator form beyond these three.
+OPERATION_AWARE_LEGACY_ONLY_FIELDS: tuple[str, ...] = ("context", "subject_id", "subject_type")
+
+_OPERATION_AWARE_LEGACY_FIELD_MESSAGES: dict[str, str] = {
+    "context": OPERATION_AWARE_CONTEXT_REJECTED_MESSAGE,
+    "subject_id": OPERATION_AWARE_SUBJECT_ID_REJECTED_MESSAGE,
+    "subject_type": OPERATION_AWARE_SUBJECT_TYPE_REJECTED_MESSAGE,
+}
+
+
+def _reject_legacy_only_fields(raw: dict[str, str]) -> tuple[list[str], dict[str, str]]:
+    """Check every known legacy-only field for a crafted non-empty value.
+
+    Checks all of :data:`OPERATION_AWARE_LEGACY_ONLY_FIELDS` (not just the
+    first offender) so a caller who crafts multiple disallowed fields at once
+    sees every rejection, not just one. Only inspects this fixed, known field
+    list — never rejects an unrelated or unrecognized POST key.
+    """
+    errors: list[str] = []
+    field_errors: dict[str, str] = {}
+    for field_name in OPERATION_AWARE_LEGACY_ONLY_FIELDS:
+        value = (raw.get(field_name) or "").strip()
+        if value:
+            message = _OPERATION_AWARE_LEGACY_FIELD_MESSAGES[field_name]
+            errors.append(message)
+            field_errors[field_name] = message
+    return errors, field_errors
+
+
+@dataclass
+class OperationAwareSimulationResult:
+    """Outcome of validating operation-aware simulator input.
+
+    ok       True when a valid OperationAwareEvaluationRequest was built.
+    request  The typed request (only when ok); else None. Carries only
+             action / resource_type / resource_id — no subject, no context,
+             no caller-supplied request_id (not exposed in this milestone;
+             see the integration plan's "Initially exposed fields").
+    errors   Ordered, user-friendly messages (empty when ok).
+    field_errors  Per-field error messages keyed by field name, for inline UI.
+    values   The (stripped) submitted action_verb/resource_type/resource_id,
+             echoed back to repopulate the form on both success and failure.
+    """
+
+    ok: bool
+    request: OperationAwareEvaluationRequest | None = None
+    errors: list[str] = field(default_factory=list)
+    field_errors: dict[str, str] = field(default_factory=dict)
+    values: dict[str, str] = field(default_factory=dict)
+
+
+def build_operation_aware_simulation(raw: dict[str, str]) -> OperationAwareSimulationResult:
+    """Validate raw form fields and build a typed ``OperationAwareEvaluationRequest``.
+
+    Pure: no I/O, no network call, no local authorization evaluation. Reuses
+    the legacy path's ``action_verb`` / ``resource_type`` / ``resource_id``
+    fields and vocabulary (:data:`ACTION_VERBS`, :data:`RESOURCE_TYPES`) and
+    its :func:`build_gateway_request` composition grammar — the composition
+    rules are identical between the two endpoints, so they are not
+    reimplemented here.
+
+    A non-empty value for any field in :data:`OPERATION_AWARE_LEGACY_ONLY_FIELDS`
+    (``context``, ``subject_id``, ``subject_type``) in ``raw`` is rejected
+    unconditionally and checked first, independent of whether the calling
+    form ever rendered an editable/enabled control for it for this
+    evaluation type — the operation-aware endpoint has no field to receive
+    any of them, and the console must never silently accept-and-discard one,
+    nor infer identity from it.
+    """
+    action_verb = (raw.get("action_verb") or "").strip()
+    resource_type = (raw.get("resource_type") or "").strip()
+    resource_id = (raw.get("resource_id") or "").strip()
+
+    values = {
+        "action_verb": action_verb,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+    }
+
+    legacy_errors, legacy_field_errors = _reject_legacy_only_fields(raw)
+    if legacy_errors:
+        return OperationAwareSimulationResult(
+            ok=False,
+            request=None,
+            errors=legacy_errors,
+            field_errors=legacy_field_errors,
+            values=values,
+        )
+
+    errors: list[str] = []
+    field_errors: dict[str, str] = {}
+
+    if not action_verb:
+        msg = "Action verb is required."
+        errors.append(msg)
+        field_errors["action_verb"] = msg
+    elif not is_supported_verb(action_verb):
+        msg = f"Action verb must be one of: {', '.join(ACTION_VERBS)}."
+        errors.append(msg)
+        field_errors["action_verb"] = msg
+
+    if not resource_type:
+        msg = "Resource type is required."
+        errors.append(msg)
+        field_errors["resource_type"] = msg
+    elif not is_supported_resource_type(resource_type):
+        msg = f"Resource type must be one of: {', '.join(RESOURCE_TYPES)}."
+        errors.append(msg)
+        field_errors["resource_type"] = msg
+
+    if resource_id:
+        if len(resource_id) > MAX_FIELD_LEN:
+            msg = f"Resource id is too long (max {MAX_FIELD_LEN})."
+            errors.append(msg)
+            field_errors["resource_id"] = msg
+        elif not _ID_RE.match(resource_id):
+            msg = "Resource id must be a simple safe string (letters, digits, and . _ - : / )."
+            errors.append(msg)
+            field_errors["resource_id"] = msg
+        elif is_typed_identifier(resource_id):
+            msg = (
+                "Resource id must be local (e.g. rooftop-1), not already typed "
+                "(e.g. ahu:rooftop-1). The gateway composes the typed id from the "
+                "resource type; sending a typed id here is a dual source of truth."
+            )
+            errors.append(msg)
+            field_errors["resource_id"] = msg
+
+    if errors:
+        return OperationAwareSimulationResult(
+            ok=False, request=None, errors=errors, field_errors=field_errors, values=values
+        )
+
+    # Defensive final check via the shared grammar builder (never context —
+    # the operation-aware endpoint has no field for it). Form-level
+    # validation above should already have caught every rejection case.
+    built = build_gateway_request(
+        action=action_verb, resource_type=resource_type, resource_id=resource_id, context=None
+    )
+    if not built.ok or built.payload is None:
+        for msg in built.errors:
+            errors.append(msg)
+            field_errors.setdefault("resource_id", msg)
+        return OperationAwareSimulationResult(
+            ok=False, request=None, errors=errors, field_errors=field_errors, values=values
+        )
+
+    payload = built.payload
+    request = OperationAwareEvaluationRequest(
+        action=str(payload["action"]),
+        resource_type=str(payload["resource_type"]) if payload.get("resource_type") else None,
+        resource_id=str(payload["resource_id"]) if payload.get("resource_id") else None,
+        request_id=None,
+    )
+    return OperationAwareSimulationResult(
+        ok=True, request=request, errors=[], field_errors={}, values=values
     )

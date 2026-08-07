@@ -53,6 +53,7 @@ from basis_console.identity import (
     sample_access_preview,
     sample_identity_preview,
 )
+from basis_console.operation_aware_presentation import build_operation_aware_presentation
 from basis_console.resources import (
     IDENTIFIER_EXPLANATION_NOTICE,
     RESOURCE_BOUNDARY_NOTICE,
@@ -67,7 +68,10 @@ from basis_console.sample_data import (
 )
 from basis_console.simulator import (
     FIELD_EXPLANATIONS,
+    EvaluationType,
+    build_operation_aware_simulation,
     build_simulation,
+    parse_evaluation_type,
 )
 from basis_console.vocabulary import ACTION_VERBS, RESOURCE_TYPES
 from basis_console.workspace import (
@@ -96,6 +100,30 @@ SIMULATOR_IDENTITY_NOTICE = (
     "Bearer token — the subject fields above are preview-only and are not sent as "
     "identity. The gateway composes the canonical action and resource id; the "
     "console does not evaluate the request, it only displays the gateway's response."
+)
+
+# Note explaining the operation-aware preview boundary (PR 4). Distinct from
+# SIMULATOR_NO_EVAL_NOTICE because the operation-aware preview shows a
+# strictly narrower, differently-shaped request (Section 4 of the
+# operation-aware console integration plan) and must never be confused with
+# the legacy preview's subject/context-inclusive shape.
+OPERATION_AWARE_NO_EVAL_NOTICE = (
+    "Operation-aware preview does not evaluate a decision. It validates your "
+    "input and shows the exact request that would be submitted to "
+    "basis-gateway's /v1/evaluate/operation-aware endpoint. No allow, deny, or "
+    "not_applicable outcome is produced, and no call is made to basis-gateway "
+    "or basis-core."
+)
+
+# Note explaining why operation-aware evaluation has no context control at
+# all, unlike the legacy path's context textarea (Section 4.5 of the
+# integration plan).
+OPERATION_AWARE_CONTEXT_NOTICE = (
+    "Operation-aware evaluation submits only action, resource type, and "
+    "resource ID — no subject and no context. Unlike legacy evaluation, this "
+    "endpoint has no field for caller-supplied context: operation-aware "
+    "context is owned by trusted operation producers (adapters, identity), "
+    "not by an ordinary console session, so there is no context control here."
 )
 
 # Empty form values used to render the simulator before any input is submitted.
@@ -223,11 +251,15 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["notice"] = SAMPLE_DATA_NOTICE
     ctx["no_eval_notice"] = SIMULATOR_NO_EVAL_NOTICE
     ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
+    ctx["operation_aware_no_eval_notice"] = OPERATION_AWARE_NO_EVAL_NOTICE
+    ctx["operation_aware_context_notice"] = OPERATION_AWARE_CONTEXT_NOTICE
     ctx["action_verbs"] = ACTION_VERBS
     ctx["resource_types"] = RESOURCE_TYPES
     ctx["field_explanations"] = FIELD_EXPLANATIONS
     ctx["scenarios"] = sample_simulator_scenarios()
     # Gateway-evaluation availability (no network call — config inspection only).
+    # Shared identically by the legacy and operation-aware paths: both use the
+    # same GatewayClient and the same configured/has_token gates.
     client = _gateway_client(request)
     ctx["gateway_configured"] = client.configured
     ctx["gateway_token_present"] = client.has_token
@@ -241,6 +273,15 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["evaluation"] = None
     ctx["evaluation_evidence"] = {}
     ctx["evaluation_json"] = None
+    # Evaluation-type selection (PR 4) — independent of `mode` above. Defaults
+    # to legacy so every old link/bookmark/test that predates this field
+    # renders exactly as before.
+    ctx["evaluation_type"] = EvaluationType.LEGACY.value
+    ctx["oa_request_summary"] = None
+    ctx["oa_preview_only"] = False
+    ctx["oa_presentation"] = None
+    ctx["oa_diagnostics_json"] = None
+    ctx["oa_diagnostics_headers_json"] = None
     return ctx
 
 
@@ -278,25 +319,69 @@ def simulate(request: Request, example: str | None = None) -> HTMLResponse:
     return templates.TemplateResponse(request, "simulate.html", ctx)
 
 
+def _empty_values_echo(form: dict[str, str]) -> dict[str, str]:
+    """Echo back whatever of ``_EMPTY_VALUES``'s keys were submitted, stripped.
+
+    Used only for the two "fail before either builder runs" cases (an invalid
+    ``evaluation_type``) so the form can still repopulate with whatever the
+    caller sent, matching the "preserve submitted values after a validation
+    error" requirement even though neither `build_simulation` nor
+    `build_operation_aware_simulation` ran.
+    """
+    return {key: (form.get(key) or "").strip() for key in _EMPTY_VALUES}
+
+
 @router.post("/simulate", response_class=HTMLResponse, summary="Build a preview or evaluate")
 async def simulate_submit(request: Request) -> HTMLResponse:
-    """Handle the two simulator modes.
+    """Handle the simulator's two independent axes: submission mode and evaluation contract.
 
-    Preview mode (default): validate and sanitize input, render the normalized
-    request shape as JSON. Never contacts the gateway, never evaluates.
+    Submission behavior (unchanged): ``mode=preview`` (default) validates and
+    sanitizes input and renders a request-shape preview only, never contacting
+    the gateway. ``mode=gateway`` additionally submits the request live and
+    displays the response verbatim.
 
-    Gateway-evaluation mode (``mode=gateway``): after a valid preview, submit
-    the request to ``basis-gateway /v1/evaluate`` and display the gateway's
-    response verbatim. The console never evaluates locally, never sends a subject
-    (identity comes from the gateway's Bearer token), and never reinterprets the
-    decision. Available only when a base URL and Bearer token are configured.
+    Evaluation contract (new, PR 4): ``evaluation_type=legacy`` (default,
+    absent-compatible) preserves every existing legacy behavior below
+    unchanged, submitting to ``basis-gateway``'s ``/v1/evaluate`` via
+    ``GatewayClient.evaluate()``. ``evaluation_type=operation_aware`` builds a
+    typed ``OperationAwareEvaluationRequest`` (no subject, no context — see
+    ``simulator.build_operation_aware_simulation``) and, in gateway mode,
+    submits it via ``GatewayClient.evaluate_operation_aware()`` exactly once,
+    then renders the shared, mode-independent
+    ``build_operation_aware_presentation()`` result. In preview mode it
+    displays the exact request that would be submitted without ever calling
+    the gateway or fabricating a decision. Operator and Training modes run
+    this exact same code path — nothing here branches on console mode.
+
+    An invalid ``evaluation_type`` value fails validation safely: no gateway
+    call, no local evaluation, whatever was submitted is echoed back.
     """
     body = await request.body()
     form = _parse_form_body(body)
     mode = (form.get("mode") or "preview").strip().lower()
-    result = build_simulation(form)
+    evaluation_type = parse_evaluation_type(form.get("evaluation_type"))
 
     ctx = _simulate_context(request)
+
+    if evaluation_type is None:
+        ctx["evaluation_type"] = (form.get("evaluation_type") or "").strip()
+        message = (
+            "Invalid evaluation type. Must be one of: "
+            f"{EvaluationType.LEGACY.value}, {EvaluationType.OPERATION_AWARE.value}."
+        )
+        ctx["errors"] = [message]
+        ctx["field_errors"] = {"evaluation_type": message}
+        ctx["values"] = _empty_values_echo(form)
+        return templates.TemplateResponse(request, "simulate.html", ctx)
+
+    ctx["evaluation_type"] = evaluation_type.value
+
+    if evaluation_type is EvaluationType.OPERATION_AWARE:
+        return _render_operation_aware_submission(request, ctx, form, mode)
+
+    # ---- Legacy path (evaluation_type == LEGACY) — unchanged from Phase 4/6 ----
+    result = build_simulation(form)
+
     ctx["values"] = result.values
     ctx["errors"] = result.errors
     ctx["field_errors"] = result.field_errors
@@ -340,6 +425,73 @@ async def simulate_submit(request: Request) -> HTMLResponse:
             ctx["evaluation_json"] = (
                 json.dumps(evaluation.response_json, indent=2) if evaluation.response_json else None
             )
+
+    return templates.TemplateResponse(request, "simulate.html", ctx)
+
+
+def _render_operation_aware_submission(
+    request: Request, ctx: dict[str, object], form: dict[str, str], mode: str
+) -> HTMLResponse:
+    """Handle ``evaluation_type=operation_aware`` for both submission modes.
+
+    Identical code path in Operator and Training modes — this function reads
+    no console-mode value and takes no mode-shaped parameter. Preview mode
+    never calls the gateway and never fabricates a decision; gateway mode
+    calls ``GatewayClient.evaluate_operation_aware()`` exactly once and passes
+    its typed result straight into ``build_operation_aware_presentation()``
+    with no intermediate raw-JSON parsing.
+    """
+    oa_result = build_operation_aware_simulation(form)
+
+    # Echo the full legacy-shaped values dict too (subject_id/subject_type/
+    # context are not part of the operation-aware request, but the shared
+    # template still renders their inputs — see "Design Decisions" in the PR
+    # report — so submitted values there are preserved across a validation
+    # error exactly like every other field).
+    ctx["values"] = {
+        "subject_id": (form.get("subject_id") or "").strip(),
+        "subject_type": (form.get("subject_type") or "").strip(),
+        "action_verb": oa_result.values.get("action_verb", ""),
+        "resource_type": oa_result.values.get("resource_type", ""),
+        "resource_id": oa_result.values.get("resource_id", ""),
+        "context": (form.get("context") or "").strip(),
+        "composed_action": "",
+        "composed_resource_id": "",
+    }
+    ctx["errors"] = oa_result.errors
+    ctx["field_errors"] = oa_result.field_errors
+
+    if not oa_result.ok or oa_result.request is None:
+        return templates.TemplateResponse(request, "simulate.html", ctx)
+
+    oa_request = oa_result.request
+    ctx["oa_request_summary"] = {
+        "action": oa_request.action,
+        "resource_type": oa_request.resource_type,
+        "resource_id": oa_request.resource_id,
+    }
+
+    if mode == "gateway":
+        client = _gateway_client(request)
+        oa_gateway_result = client.evaluate_operation_aware(oa_request)
+        presentation = build_operation_aware_presentation(oa_request, oa_gateway_result)
+        ctx["oa_presentation"] = presentation
+        diagnostics = presentation.transport.diagnostics
+        if diagnostics is not None:
+            ctx["oa_diagnostics_json"] = (
+                json.dumps(diagnostics.response_body, indent=2, sort_keys=False)
+                if diagnostics.response_body
+                else None
+            )
+            ctx["oa_diagnostics_headers_json"] = (
+                json.dumps(diagnostics.headers, indent=2, sort_keys=False)
+                if diagnostics.headers
+                else None
+            )
+    else:
+        # Preview: request-shape preview only. No gateway call, no local
+        # evaluation, no fabricated outcome/disposition/evidence.
+        ctx["oa_preview_only"] = True
 
     return templates.TemplateResponse(request, "simulate.html", ctx)
 
