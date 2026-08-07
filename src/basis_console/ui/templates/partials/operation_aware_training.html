@@ -1,0 +1,160 @@
+{# Training-only educational enrichment for the operation-aware evaluation flow (PR 5).
+
+   Included only from simulate.html's `evaluation_type == "operation_aware"`
+   section. Reads `oa_training` (basis_console.operation_aware_training
+   .TRAINING_CONTENT — static, console-authored copy), `oa_presentation`
+   (the same OperationAwarePresentation object Operator mode already
+   rendered, or None in preview mode), `oa_preview_only`, and
+   `is_training_mode` — all already present in the surrounding context.
+   Renders nothing outside Training mode.
+
+   This partial adds explanatory markup only. Every fact it distinguishes
+   (which outcome/failure/status bucket applies) is a lookup keyed by a value
+   `operation_aware_presentation.build_operation_aware_presentation()` already
+   computed (`.value`, `.applicable`, `.present`) — never a new comparison
+   against an outcome/disposition/failure_reason literal. See
+   tests/test_operation_aware_training_boundary.py. #}
+{% if is_training_mode %}
+  {% set t = oa_training %}
+  {% set p = oa_presentation %}
+  <section class="training-callout oa-training-content" aria-label="Operation-aware training content">
+    <h3>Learn: how this operation-aware evaluation works</h3>
+    <p class="muted">
+      Everything below is <span class="tag">console explanation</span> —
+      educational copy written by basis-console, kept visually separate from
+      the submitted input and returned evidence above. It explains that
+      result; it never alters, completes, or reinterprets it.
+    </p>
+
+    <details class="oa-training-section" open>
+      <summary>How BASIS processes this request (conceptual flow)</summary>
+      <p class="muted">
+        A conceptual walkthrough of processing stages, not an execution
+        trace. Only the stages marked "observable here" surface as an actual
+        field on the response shown above; the others describe what happens
+        without a corresponding per-request value in the current contract.
+      </p>
+      <table class="grid">
+        <thead>
+          <tr>
+            <th scope="col">Stage</th>
+            <th scope="col">Owner</th>
+            <th scope="col">What it does</th>
+            <th scope="col">Visible on this response?</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for stage in t.ecosystem_stages %}
+            <tr>
+              <td>{{ stage.title }}</td>
+              <td class="mono">{{ stage.owner }}</td>
+              <td>{{ stage.description }}</td>
+              <td>
+                {% if stage.observable_today %}<span class="tag">observable here</span>{% else %}<span class="tag">not observable here</span>{% endif %}
+                <br><span class="muted">{{ stage.observability_note }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="notice">{{ t.identity_processing_boundary_note }}</p>
+    </details>
+
+    <details class="oa-training-section">
+      <summary>Provenance legend</summary>
+      <p class="muted">
+        Every value on this page is labelled with one of these four text
+        tags — never by color alone.
+      </p>
+      <dl class="kv">
+        {% for entry in t.provenance_legend %}
+          <dt><span class="tag">{{ entry.label }}</span></dt>
+          <dd>{{ entry.description }}</dd>
+        {% endfor %}
+      </dl>
+    </details>
+
+    <details class="oa-training-section">
+      <summary>Authorization vocabulary</summary>
+      <table class="grid">
+        <thead>
+          <tr><th scope="col">Term</th><th scope="col">Meaning</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in t.vocabulary %}
+            <tr><td>{{ entry.term }}</td><td>{{ entry.definition }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="notice">{{ t.vocabulary_collapse_warning }}</p>
+    </details>
+
+    {% if oa_preview_only %}
+      <div class="oa-training-section">
+        <h4>What this preview does and does not show</h4>
+        <ul>
+          {% for point in t.preview_education_points %}<li>{{ point }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if p %}
+      <div class="oa-training-section">
+        <h4>What this result means</h4>
+        {% if p.evaluation_result.kernel_evaluation_status.applicable %}
+          {% if p.evaluation_result.kernel_evaluation_status.present and p.evaluation_result.kernel_evaluation_status.value == "completed" %}
+            {% if p.evaluation_result.outcome.present %}
+              <p>{{ t.outcome_copy[p.evaluation_result.outcome.value] }}</p>
+            {% endif %}
+          {% else %}
+            <p>{{ t.governed_failure_intro }}</p>
+            {% if p.evaluation_result.failure_reason.present %}
+              <p>{{ t.failure_reason_copy[p.evaluation_result.failure_reason.value] }}</p>
+            {% endif %}
+          {% endif %}
+        {% else %}
+          <p>{{ t.generic_failure_intro }}</p>
+        {% endif %}
+      </div>
+
+      {% set explanation_absent = p.evaluation_result.explanation.applicable and not p.evaluation_result.explanation.present %}
+      {% set reason_code_absent = p.evaluation_result.reason_code.applicable and not p.evaluation_result.reason_code.present %}
+      {% set bundle_absent = p.policy_bundle.bundle_id.applicable and not p.policy_bundle.bundle_id.present %}
+      {% set trace_absent = p.evidence.trace_id.applicable and not p.evidence.trace_id.present %}
+      {% if explanation_absent or reason_code_absent or bundle_absent or trace_absent %}
+        <details class="oa-training-section">
+          <summary>Why some evidence fields are absent here</summary>
+          <p class="muted">
+            Absence can be a valid, complete contract state — not every
+            absent field here is shown at once, only the ones relevant to
+            this result.
+          </p>
+          <ul>
+            {% if explanation_absent %}<li>{{ t.null_explanation_guidance }}</li>{% endif %}
+            {% if reason_code_absent %}<li>{{ t.absent_reason_code_guidance }}</li>{% endif %}
+            {% if bundle_absent %}<li>{{ t.absent_bundle_identity_guidance }}</li>{% endif %}
+            {% if trace_absent %}<li>{{ t.absent_trace_id_guidance }}</li>{% endif %}
+          </ul>
+        </details>
+      {% endif %}
+
+      <details class="oa-training-section">
+        <summary>Correlation and evidence identifiers</summary>
+        <dl class="kv">
+          <dt>Request ID</dt><dd>{{ t.request_id_education }}</dd>
+          <dt>Correlation ID</dt><dd>{{ t.correlation_id_education }}</dd>
+          <dt>Trace ID</dt><dd>{{ t.trace_id_education }}</dd>
+          <dt>Evaluation trace <span class="tag">future capability</span></dt><dd>{{ t.evaluation_trace_education }}</dd>
+          <dt>Audit evidence</dt><dd>{{ t.audit_evidence_education }}</dd>
+        </dl>
+      </details>
+    {% endif %}
+
+    <details class="oa-training-section">
+      <summary>Why there's no identity or context control here</summary>
+      <ul>
+        {% for point in t.context_and_producer_trust_points %}<li>{{ point }}</li>{% endfor %}
+      </ul>
+    </details>
+  </section>
+{% endif %}

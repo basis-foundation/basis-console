@@ -54,6 +54,7 @@ from basis_console.identity import (
     sample_identity_preview,
 )
 from basis_console.operation_aware_presentation import build_operation_aware_presentation
+from basis_console.operation_aware_training import TRAINING_CONTENT as OA_TRAINING_CONTENT
 from basis_console.resources import (
     IDENTIFIER_EXPLANATION_NOTICE,
     RESOURCE_BOUNDARY_NOTICE,
@@ -282,6 +283,12 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["oa_presentation"] = None
     ctx["oa_diagnostics_json"] = None
     ctx["oa_diagnostics_headers_json"] = None
+    # Static Training-mode educational content for the operation-aware flow
+    # (PR 5). A single, already-built, mode-independent constant — reused
+    # unchanged on every request, in both Operator and Training modes. Only
+    # the template's own `is_training_mode` gate decides whether any of it is
+    # rendered; building/attaching it here changes no runtime behavior.
+    ctx["oa_training"] = OA_TRAINING_CONTENT
     return ctx
 
 

@@ -1220,3 +1220,133 @@ operation-aware context, no trusted-producer-only field exposure, no trace
 viewer, no audit-event viewer, no policy editing, no schema/gateway/adapter
 changes, and no change to legacy `/v1/evaluate` behavior or its default
 status.
+
+## Phase 19 operation-aware Training-mode educational enrichment
+
+Phase 19 (integration-plan PR 5) adds Training-only educational content
+around the operation-aware Decision Simulator flow Phase 18 already shipped
+for both modes. **This phase adds explanatory markup only** — no control,
+form field, request construction, validation rule, gateway call, endpoint
+selection, response parsing, presentation-model field, authorization
+behavior, returned evidence, or page status code changes. Operator mode is
+byte-for-byte unaffected: the new markup is never rendered outside Training
+mode, and the shared route, request, gateway-client call, and
+`OperationAwarePresentation` object Phase 18 built remain exactly as before.
+
+### New module: `operation_aware_training.py`
+
+A flat, top-level module of static, console-authored teaching content —
+consistent with `operation_aware_presentation.py`'s own precedent of one
+focused module per concern rather than a `presentation`/`training` package.
+Everything in it is literal data built once at import time:
+
+- Ten `EcosystemStage` entries walking the conceptual operation-aware flow
+  (submitted request → gateway authentication → producer trust/field-ownership
+  validation → action/resource composition → policy-bundle applicability →
+  rule evaluation and precedence → kernel outcome → enforcement
+  disposition/HTTP classification → correlation and evidence → console
+  presentation), each tagged with its owning component and whether its result
+  is actually observable on the current gateway response — explicitly false
+  for authenticated-subject and live producer-trust classification, per the
+  integration plan's §7.1 correction.
+- A four-entry `PROVENANCE_LEGEND` restating `ContentSource`'s vocabulary in
+  prose, and a six-entry `AUTHORIZATION_VOCABULARY` glossary (evaluation
+  status, kernel outcome, failure reason, enforcement disposition, HTTP
+  status, client status) with an explicit "never collapse these" warning.
+- `OUTCOME_TRAINING_COPY` and `FAILURE_REASON_TRAINING_COPY` — string-keyed
+  (by the same `.value` strings `PresentationContentItem` already carries)
+  dictionaries built from an enum-keyed private mapping asserted exhaustive
+  over `OperationAwareOutcome`/`OperationAwareFailureReason` at import time,
+  so a future enum addition fails loudly rather than rendering silently
+  incomplete copy. `GOVERNED_FAILURE_INTRO`/`GENERIC_FAILURE_INTRO` cover the
+  two remaining Section-4 categories (governed failure, generic/client
+  failure), and `GOVERNED_CLIENT_STATUS_VALUES`/`GENERIC_CLIENT_STATUS_VALUES`
+  partition `OperationAwareEvaluationStatus` exhaustively by construction.
+- Null/absent-evidence guidance (explanation, `reason_code`, bundle identity,
+  `trace_id`), context/producer-trust boundary points, correlation/trace/
+  audit-evidence identifier education, and preview-mode education points —
+  each a plain string or string tuple, never a function.
+- `TRAINING_CONTENT` — one frozen `OperationAwareTrainingContent` aggregate
+  gathering all of the above, attached to the simulator's template context
+  unconditionally (`ui/views.py`) exactly like `is_training_mode` itself; only
+  the template's own Training-mode gate decides whether any of it renders.
+
+The module declares no functions at all (enforced by
+`tests/test_operation_aware_training_boundary.py`): every "selection" of
+which static entry applies to the current result is a dictionary lookup or an
+`.applicable`/`.present` check performed in the template against a value
+`operation_aware_presentation.build_operation_aware_presentation()` already
+computed — never a second, independently-computed decision. It imports
+nothing from `basis_console.config`, `basis_console.gateway.client`,
+`httpx`, `fastapi`, or `jinja2`, matches `operation_aware_presentation.py`'s
+own "no I/O, no mode argument" discipline, and is never given a request,
+response, or console-mode value to act on.
+
+### New partial: `partials/operation_aware_training.html`
+
+Included only from `simulate.html`'s existing `evaluation_type ==
+"operation_aware"` branch, immediately before that section's closing tag, so
+it shares the surrounding context (`oa_presentation`, `oa_preview_only`,
+`oa_request_summary`) without any new context-passing mechanism. Reuses the
+existing `.training-callout` container class and the repository's established
+`<details>`/`<summary>`/`table.grid`/`dl.kv` conventions rather than
+introducing new visual patterns; the only new CSS is spacing rules for the
+added subsections (`.oa-training-section`), added to the existing
+`style.css`, not a redesign.
+
+Renders, only when `is_training_mode`:
+
+- the ten-stage ecosystem-flow table plus the identity/producer processing
+  boundary note (Required Section 1);
+- the provenance legend (Required Section 2);
+- the authorization vocabulary glossary (Required Section 3);
+- preview-only education when `oa_preview_only` is set, and otherwise
+  (`oa_presentation` present) exactly one of the ALLOW / DENY / NOT_APPLICABLE
+  / governed-failure / generic-failure explanations, selected by a lookup
+  keyed on `kernel_evaluation_status`/`outcome`/`failure_reason`'s
+  already-computed `.value` — never a re-derived decision (Required Section
+  4, enforced by `test_partial_does_not_reconstruct_outcome_disposition_or_failure_reason_logic`);
+- only the null/absent-evidence guidance sentences relevant to the actual
+  result, never all four at once (Required Section 5);
+- the context/producer-trust boundary explanation, shown unconditionally
+  whenever the operation-aware section renders in Training mode, since it is
+  architectural education rather than per-request evidence (Required Section
+  6);
+- correlation/trace/evaluation-trace/audit-evidence identifier education,
+  shown alongside a live result (Required Section 7).
+
+### Security and evidence discipline
+
+No bearer token, `Authorization` header, or gateway configuration value is
+ever referenced by the partial or the content module (enforced by
+`test_partial_never_references_tokens_or_configuration`). No new gateway
+call, gateway-client method, or route is introduced — the route still calls
+`GatewayClient.evaluate_operation_aware()` exactly once per submission
+(`test_views_module_calls_evaluate_operation_aware_exactly_once`), and only
+one `POST /simulate` route exists. No console explanation is ever labelled
+`returned evidence`, and no returned evidence is altered, embellished, or
+overwritten for teaching purposes — every new sentence is visually and
+semantically tagged `console explanation` (or `future capability` for the
+evaluation-trace row), reusing the exact vocabulary Phase 17 already
+established.
+
+### Training-mode parity
+
+`tests/test_operation_aware_training_rendering.py` and the existing
+`tests/test_operation_aware_mode_parity.py` together prove that enabling
+Training mode changes markup only: the same form controls, enabled/disabled
+control state, submitted request, `GatewayClient` call, typed result,
+`OperationAwarePresentation` object, returned evidence, validation outcome,
+and route status are produced in both modes — Operator mode simply never
+renders the additional `<section class="oa-training-content">` block.
+
+### What Phase 19 does not do
+
+No new evaluation-type selector, submission-mode selector, request field,
+context behavior, form validation change, route, gateway-client method,
+response-parsing change, or presentation-model field. No trace retrieval, no
+trace viewer, no audit-event viewer, no subject or producer-trust inference,
+no AI-generated explanation, and no change to Operator-mode rendering, legacy
+`/v1/evaluate` behavior, or any degraded-state HTTP classification. Full
+degraded-state parity coverage, further diagnostics refinement, documentation
+polish, and release readiness remain PR 6 scope.
