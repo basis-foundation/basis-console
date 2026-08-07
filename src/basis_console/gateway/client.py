@@ -4,11 +4,19 @@ The client maps gateway responses to typed result objects and never raises a
 network error into its caller — every failure mode is represented as a status
 value so UI routes and the readiness probe can render safely.
 
-It does two things, both strictly through the gateway's HTTP surface:
+It does three things, all strictly through the gateway's HTTP surface:
   - ``check_status()`` probes ``/health`` and ``/ready`` for connectivity (Phase 2).
   - ``evaluate()`` submits an authorization request to ``POST /v1/evaluate`` and
     relays the gateway's decision verbatim (Phase 4). The console never evaluates
     locally, never imports ``basis-core``, and never reinterprets the decision.
+  - ``evaluate_operation_aware()`` submits an operation-aware authorization
+    request to ``POST /v1/evaluate/operation-aware`` and relays the kernel's
+    governed result verbatim (Phase 16). Structurally distinct from
+    ``evaluate()`` end to end — separate request/response/result models
+    (``basis_console.gateway.operation_aware_models``), separate endpoint,
+    separate status enum — sharing only this client and the redaction
+    helpers. This PR adds the client capability only; no route or template
+    calls it yet.
 
 Gateway-owned composition: the gateway is the action/resource composition
 boundary. ``evaluate()`` submits a *normalized* request — a bare ``action`` verb
@@ -40,6 +48,16 @@ from basis_console.gateway.models import (
     GatewayProbeResult,
     GatewayStatus,
     GatewayStatusReport,
+)
+from basis_console.gateway.operation_aware_models import (
+    OperationAwareEvaluationRequest,
+    OperationAwareEvaluationResult,
+    OperationAwareEvaluationState,
+    OperationAwareEvaluationStatus,
+    _OperationAwareContractError,
+    _parse_operation_aware_response,
+    _reconcile_correlation_id,
+    _serialize_operation_aware_request,
 )
 from basis_console.gateway.redaction import redact_headers, redact_json
 
@@ -388,4 +406,199 @@ class GatewayClient:
             error_code=_s("error"),
             error_message=_s("message"),
             response_json=body or None,
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 16 — operation-aware evaluation (contract + client only; no UI)
+    # ------------------------------------------------------------------
+
+    # HTTP statuses this endpoint uses for a *generic* (ungoverned) pre-kernel
+    # condition when the response body carries no ``evaluation_status`` key.
+    # 403 is deliberately absent: per the endpoint contract this endpoint
+    # always returns a governed body on 403 (deny / not_applicable), so a 403
+    # without one is a contract violation, not a recognized generic status —
+    # see ``_interpret_operation_aware`` below.
+    _OPERATION_AWARE_GENERIC_STATUS_MAP: dict[int, OperationAwareEvaluationStatus] = {
+        400: OperationAwareEvaluationStatus.REQUEST_REJECTED,
+        401: OperationAwareEvaluationStatus.UNAUTHORIZED,
+        404: OperationAwareEvaluationStatus.CAPABILITY_UNAVAILABLE,
+        503: OperationAwareEvaluationStatus.EVALUATOR_UNAVAILABLE,
+        500: OperationAwareEvaluationStatus.GATEWAY_ERROR,
+    }
+
+    def evaluate_operation_aware(
+        self, request: OperationAwareEvaluationRequest
+    ) -> OperationAwareEvaluationResult:
+        """Submit a request to ``POST /v1/evaluate/operation-aware``. Never raises.
+
+        Structurally separate from ``evaluate()``: a distinct request model
+        (``OperationAwareEvaluationRequest``, with no field for a subject,
+        arbitrary context, or any trusted-producer-only field — the type
+        surface makes those impossible to set), a distinct endpoint, and a
+        distinct result/status model
+        (``OperationAwareEvaluationResult``/``OperationAwareEvaluationStatus``).
+        The gateway's governed result — ``evaluation_status``, ``outcome``,
+        ``failure_reason``, ``disposition``, ``bundle_id``/``bundle_version``,
+        ``reason_code``, ``explanation`` — is relayed verbatim; this method
+        never reinterprets it, and never fabricates evidence the gateway did
+        not return. ``request`` is never mutated (it is a frozen dataclass).
+        """
+        if self._base_url is None:
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.NOT_CONFIGURED
+            )
+        if self._bearer_token is None:
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.TOKEN_MISSING
+            )
+
+        body = _serialize_operation_aware_request(request)
+        headers = {"Authorization": f"Bearer {self._bearer_token}"}
+
+        try:
+            with httpx.Client(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                transport=self._transport,
+            ) as client:
+                response = client.post("/v1/evaluate/operation-aware", json=body, headers=headers)
+        except httpx.TimeoutException as exc:
+            # A timeout is a kind of unavailable; say so specifically. Token must not leak.
+            log.warning(
+                "Gateway operation-aware evaluation timed out at %s: %s", self._base_url, exc
+            )
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.UNAVAILABLE,
+                timed_out=True,
+                detail=f"gateway did not respond within {self._timeout:g}s (timeout)",
+            )
+        except httpx.HTTPError as exc:
+            # Connection refused, DNS failure, etc. Token must not leak.
+            log.warning(
+                "Gateway operation-aware evaluation could not contact %s: %s", self._base_url, exc
+            )
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.UNAVAILABLE,
+                detail=f"could not contact gateway: {exc}",
+            )
+        except Exception as exc:  # pragma: no cover - defensive catch-all
+            log.error("Unexpected error during operation-aware evaluation: %s", exc)
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.GATEWAY_ERROR,
+                detail=f"unexpected error: {exc}",
+            )
+
+        return self._interpret_operation_aware(response)
+
+    @classmethod
+    def _interpret_operation_aware(cls, response: httpx.Response) -> OperationAwareEvaluationResult:
+        """Map an operation-aware HTTP response to a typed result. Never raises.
+
+        Distinguishes a governed ``OperationAwareEvaluateResponse`` body from a
+        generic pre-kernel ``ErrorResponse``/framework body by inspecting the
+        body for an ``evaluation_status`` key — never by HTTP status code
+        alone, since this endpoint's ``400``/``403``/``500``/``503`` can each
+        carry either shape (per the endpoint contract's "status code does not
+        determine body shape" nuance).
+        """
+        code = response.status_code
+        headers = redact_headers(response.headers)
+        header_corr = response.headers.get("X-Correlation-ID")
+
+        parsed: object = None
+        try:
+            parsed = response.json()
+        except Exception:
+            parsed = None
+
+        body: dict[str, object] | None = parsed if isinstance(parsed, dict) else None
+        redacted_body = redact_json(body) if body is not None else None
+
+        if body is not None and "evaluation_status" in body:
+            try:
+                # Correlation-ID reconciliation (body vs. X-Correlation-ID
+                # header) happens inside the strict parse, as one contract
+                # invariant among the others it checks — a disagreement
+                # raises the same _OperationAwareContractError and aborts
+                # parsing before any OperationAwareEvaluationResponse is
+                # constructed.
+                governed = _parse_operation_aware_response(body, header_corr)
+            except _OperationAwareContractError as exc:
+                # Never select either correlation value as authoritative on a
+                # contract violation (which may be exactly this mismatch, or
+                # an unrelated one) — the redacted body/headers already
+                # preserve both raw values as diagnostic material.
+                return OperationAwareEvaluationResult(
+                    status=OperationAwareEvaluationStatus.CONTRACT_INVALID,
+                    http_status=code,
+                    detail=f"gateway response failed contract validation: {exc}",
+                    response_json=redacted_body,
+                    headers=headers,
+                )
+
+            status = (
+                OperationAwareEvaluationStatus.EVALUATION_COMPLETED
+                if governed.evaluation_status is OperationAwareEvaluationState.COMPLETED
+                else OperationAwareEvaluationStatus.EVALUATION_FAILED
+            )
+            return OperationAwareEvaluationResult(
+                status=status,
+                http_status=code,
+                response=governed,
+                # Already the single reconciled value — body and header agree
+                # by construction, or exactly one of them was present.
+                correlation_id=governed.correlation_id,
+                response_json=redacted_body,
+                headers=headers,
+            )
+
+        # No governed body. This endpoint always returns a governed body on
+        # 403 (deny / not_applicable) — a 403 without one is a contract
+        # violation, not a recognized generic-error status.
+        if code == 403:
+            try:
+                corr = _reconcile_correlation_id(
+                    body.get("correlation_id") if body is not None else None, header_corr
+                )
+            except _OperationAwareContractError:
+                corr = None
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.CONTRACT_INVALID,
+                http_status=code,
+                detail="HTTP 403 response carried no governed evaluation body",
+                correlation_id=corr,
+                response_json=redacted_body,
+                headers=headers,
+            )
+
+        error_code = body.get("error") if body is not None else None
+        error_message = body.get("message") if body is not None else None
+        body_correlation_raw = body.get("correlation_id") if body is not None else None
+
+        try:
+            correlation_id = _reconcile_correlation_id(body_correlation_raw, header_corr)
+        except _OperationAwareContractError as exc:
+            # Same evidence-integrity rule as the governed path: a mismatch
+            # between the body and header correlation id is a contract
+            # violation, not a generic error to relay with a guessed value.
+            return OperationAwareEvaluationResult(
+                status=OperationAwareEvaluationStatus.CONTRACT_INVALID,
+                http_status=code,
+                detail=f"gateway response failed contract validation: {exc}",
+                response_json=redacted_body,
+                headers=headers,
+            )
+
+        status = cls._OPERATION_AWARE_GENERIC_STATUS_MAP.get(
+            code, OperationAwareEvaluationStatus.GATEWAY_ERROR
+        )
+
+        return OperationAwareEvaluationResult(
+            status=status,
+            http_status=code,
+            correlation_id=correlation_id,
+            error_code=error_code if isinstance(error_code, str) else None,
+            error_message=error_message if isinstance(error_message, str) else None,
+            response_json=redacted_body,
+            headers=headers,
         )

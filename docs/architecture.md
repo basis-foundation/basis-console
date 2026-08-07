@@ -835,3 +835,108 @@ later without changing the contract.
 | GET    | `/resources`         | HTML | Resource Explorer — sample resources, identifiers, request shapes (read-only). |
 | GET    | `/gateway`           | HTML | Gateway Diagnostics — live gateway health/readiness (read-only). |
 ```
+
+## Phase 16 operation-aware contract and gateway-client layer
+
+Phase 16 adds a second, structurally separate gateway-client capability:
+`GatewayClient.evaluate_operation_aware()`, which submits to
+`basis-gateway`'s `POST /v1/evaluate/operation-aware` and relays the kernel's
+governed operation-aware result verbatim. **This phase adds an internal
+client capability only** — no route, template, navigation entry, simulator
+control, or other user-visible surface calls it. Operator mode and Training
+mode are both completely unaffected; neither exposes operation-aware
+evaluation yet. The console still calls only the gateway, never
+`basis-core` directly — this phase adds no `basis-core` import and no
+`basis-core` dependency (see the new `tests/test_no_basis_core_boundary.py`,
+the first mechanical enforcement of that invariant in this repository). The
+legacy `POST /v1/evaluate` client (`evaluate()`, Phase 4) is untouched and
+remains fully supported; the two paths share only the `GatewayClient` class,
+`redact_headers`/`redact_json`, and the console's configured
+`GATEWAY_BASE_URL`/`GATEWAY_BEARER_TOKEN` — no request, response, or result
+model is shared or interchangeable between them.
+
+### New module: `gateway/operation_aware_models.py`
+
+Kept as a sibling of `gateway/models.py`, not an extension of it, so the
+legacy and operation-aware contracts can never be intertwined or cast into
+one another (the operation-aware console integration plan's §10.2/§16
+"Module Organization" — Option B). It defines:
+
+- `OperationAwareEvaluationRequest` — the complete, closed set of fields an
+  ordinary console session may send (`action`, `resource_type`,
+  `resource_id`, `request_id`). There is no field for a subject, for
+  arbitrary `context`, or for any of the nine trusted-producer-only fields
+  (`operation_intent`, `location`, `device`, `protocol_context`,
+  `safety_context`, `environment_context`, `risk_context`,
+  `identity_evidence_reference`, `adapter_evidence_reference`) — the type
+  surface makes them impossible to set, not merely unvalidated. Frozen, so a
+  caller-held request object can never be mutated.
+- Closed-vocabulary enums matching the gateway's own closed fields exactly:
+  `OperationAwareEvaluationState` (`completed`/`failed`),
+  `OperationAwareOutcome` (`allow`/`deny`/`not_applicable`),
+  `OperationAwareFailureReason` (the six governed failure reasons), and
+  `OperationAwareDisposition` (`allow`/`deny`). `reason_code` stays a plain
+  `str | None` — the gateway contract documents it as not yet a closed
+  vocabulary.
+- `OperationAwareEvaluationResponse` — the fully-parsed, contract-valid
+  governed response body. Deliberately has no `evaluation_trace` field: the
+  endpoint's current contract returns that field only as `null`/absent, so
+  there is nothing typed to carry; a response asserting a non-null trace is
+  treated as a contract violation, not modeled as a loosely-typed trace
+  viewer.
+- `OperationAwareEvaluationStatus` — the client-level classification of a
+  call (`NOT_CONFIGURED`, `TOKEN_MISSING`, `UNAUTHORIZED`,
+  `CAPABILITY_UNAVAILABLE`, `REQUEST_REJECTED`, `EVALUATOR_UNAVAILABLE`,
+  `EVALUATION_COMPLETED`, `EVALUATION_FAILED`, `CONTRACT_INVALID`,
+  `UNAVAILABLE`, `GATEWAY_ERROR`). This is a different axis from the
+  kernel's own `evaluation_status` field: kernel `DENY` and
+  `NOT_APPLICABLE` are both `EVALUATION_COMPLETED` at this level — they are
+  already distinguished precisely by the parsed `response.outcome`, so the
+  status enum does not duplicate that distinction.
+- `OperationAwareEvaluationResult` — the typed result wrapper, structurally
+  distinct from the legacy `GatewayEvaluationResult` (no shared fields, no
+  casting between them). Carries the redacted raw body and redacted response
+  headers alongside the typed `response`, for later raw-display use.
+
+### Strict, shape-driven response parsing
+
+Per the endpoint contract, HTTP status code alone does not determine response
+body shape: `400`, `403`, `500`, and `503` can each carry either a governed
+`OperationAwareEvaluateResponse` body or a generic, ungoverned
+`ErrorResponse`/framework body. `GatewayClient._interpret_operation_aware`
+distinguishes the two by inspecting the body for an `evaluation_status` key,
+never by status code — a governed body is parsed and trusted regardless of
+which status carried it (including a governed failure on `400`/`503`/`500`),
+and a body that looks governed but violates a documented invariant (missing
+required field, unknown closed-vocabulary value, contradictory
+outcome/failure-reason/disposition combination, a non-null trace) is
+classified `CONTRACT_INVALID` rather than partially trusted. An HTTP `403`
+carrying no governed body is also `CONTRACT_INVALID` — this endpoint's
+contract always returns a governed body on `403`. Every other HTTP status is
+classified generically (`400`→`REQUEST_REJECTED`, `401`→`UNAUTHORIZED`,
+`404`→`CAPABILITY_UNAVAILABLE`, `503`→`EVALUATOR_UNAVAILABLE`,
+`500`→`GATEWAY_ERROR`, anything else→`GATEWAY_ERROR`), matching the
+`_interpret_evaluation` precedent already established for the legacy path.
+
+### Boundaries preserved
+
+The console still calls the gateway, never the kernel; relays governed
+results without reevaluating or reinterpreting them; and fabricates no
+evidence, explanation, reason code, or trace the gateway did not return. Null
+`explanation`/absent `reason_code`/absent `bundle_id`/`bundle_version` are
+preserved as first-class valid states, never synthesized. `NOT_APPLICABLE` is
+never relabelled `deny`, even though both share HTTP `403` and
+`disposition=deny` on this endpoint. Redaction reuses the existing
+`redact_headers`/`redact_json` helpers unchanged — no new redaction path was
+introduced. The configured Bearer token is never present in any request body,
+result field, or `repr`.
+
+### What Phase 16 does not do
+
+No route, no template, no navigation entry, no simulator control, no
+Operator-mode or Training-mode rendering, no presentation/view model, no
+evaluation-type selector, and no live-gateway integration test. Operation-aware
+evaluation remains entirely unreachable from the console's UI until a later
+phase builds the shared presentation model and wires it into `/simulate` —
+see `docs/implementation/operation-aware-console-integration-plan.md`, PRs
+3–6, for that sequence.
