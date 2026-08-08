@@ -1,4 +1,4 @@
-# basis-console — Architecture Notes (Phases 1–15)
+# basis-console — Architecture Notes (Phases 1–20)
 
 This document records the architectural position of `basis-console` and the
 boundaries this implementation must preserve. It summarizes and defers to the
@@ -1461,4 +1461,6 @@ and broader operator investigation workflows remain genuine future work,
 tracked separately from this milestone.
 
 **The `basis-console` operation-aware integration milestone (integration-plan
-PRs 1–6 / architecture Phases 16–20) is complete for its approved scope.**
+PRs 1–6 / architecture Phases 16–20) is complete for its approved scope, and
+ships in `v0.2.0`** (see [`docs/releases/v0.2.0.md`](releases/v0.2.0.md)).
+Phases 1–15 shipped earlier, under the `v0.1.0`/`v0.1.1` tags.

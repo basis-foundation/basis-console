@@ -19,10 +19,10 @@ It does not authenticate users.
 It reaches the system only through basis-gateway — never basis-core directly.
 ```
 
-> **Status: v0.1.0 release candidate.** The console's interaction patterns,
+> **Status: v0.2.0 release candidate.** The console's interaction patterns,
 > boundaries, documentation, and quality gates are stable enough for early
 > adopters to evaluate. This is **not** a production-ready, audited, or hardened
-> deployment artifact. See [`docs/releases/v0.1.0.md`](docs/releases/v0.1.0.md).
+> deployment artifact. See [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md).
 
 ---
 
@@ -233,8 +233,8 @@ decision of its own.
 
 ## Screenshots
 
-Captures of the `v0.1.0` release-candidate interface, running in sample-only
-mode.
+Captures of the console interface, running in sample-only mode (captured for
+the `v0.1.0` release candidate; the pages shown are unchanged in `v0.2.0`).
 
 ### Home / status
 
@@ -322,8 +322,10 @@ privately per [`SECURITY.md`](SECURITY.md).
   describes has since been implemented and hardened (see `docs/architecture.md`,
   Phases 16–20) and is available today under "Operation-aware evaluation"
   below.
+- [`docs/releases/v0.2.0.md`](docs/releases/v0.2.0.md) — release notes for the
+  current `v0.2.0` candidate.
 - [`docs/releases/v0.1.0.md`](docs/releases/v0.1.0.md) — release notes for the
-  `v0.1.0` candidate.
+  prior `v0.1.0` candidate.
 - [`docs/release-checklist.md`](docs/release-checklist.md) — what must be true to
   tag a release.
 - [`docs/smoke-test.md`](docs/smoke-test.md) — manual smoke test for each run mode.

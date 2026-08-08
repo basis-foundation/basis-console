@@ -5,6 +5,95 @@ All notable changes to `basis-console` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-08
+
+`v0.2.0` brings **operation-aware authorization** into the Decision Simulator
+through `basis-gateway`, alongside the console's existing legacy-evaluation
+workflow (`POST /v1/evaluate`, unchanged and still the default), and closes
+out a release-readiness hardening pass over that capability.
+
+This release also restores alignment among package metadata, this changelog,
+and the Git tag after the `v0.1.x` tags did not consistently update all
+three — see the "Notes" section below.
+
+### Added
+
+- **Operation-aware evaluation contract** — a second, explicit evaluation
+  contract on the Decision Simulator (`evaluation_type=operation_aware`),
+  selectable alongside the legacy contract. Submits only action / resource
+  type / resource ID (no subject, no context) to `basis-gateway`'s
+  `POST /v1/evaluate/operation-aware`.
+- **Typed operation-aware gateway client** — strict, shape-driven parsing that
+  distinguishes a governed evaluation result from a generic/client error.
+- **Governed and generic response handling** — evaluation status, kernel
+  outcome (`allow` / `deny` / `not_applicable`), governed failure reason,
+  gateway disposition, HTTP status, and console client status are kept
+  distinct throughout, never collapsed into one another.
+- **Correlation-ID integrity checking** between the submitted request and the
+  gateway's response.
+- **Shared operation-aware presentation model** with explicit provenance
+  classification on every displayed fact (submitted input / returned
+  evidence / console explanation / future capability).
+- **Legacy/operation-aware simulator selection** — one shared Decision
+  Simulator workflow, with an explicit per-request evaluation-contract
+  choice, preview mode (no gateway call), and live gateway submission.
+- **Operator/Training runtime parity** — both presentation modes render the
+  identical operation-aware workflow and result.
+- **Training-mode educational enrichment** — a dedicated panel (ecosystem
+  flow, provenance legend, vocabulary glossary, and an explanation of the
+  actual result) alongside the shared result; explanatory markup only, never
+  a behavior change.
+- **Release and test documentation**: `docs/releases/v0.2.0.md` and
+  `docs/testing/operation-aware-simulator-smoke-test.md`.
+
+### Security
+
+- **Strict typed response parsing** for the operation-aware gateway contract —
+  a governed result and a generic/client error are mutually exclusive, closed
+  shapes; a response that matches neither is surfaced as `contract_invalid`
+  rather than guessed at or partially rendered.
+- **Correlation-ID integrity check** — when the gateway echoes a correlation ID
+  that does not match the one the console sent, the mismatch is treated as a
+  contract violation and surfaced as a diagnostic, never silently accepted.
+- **Redacted diagnostics** — the raw response body and headers shown for a
+  generic/client failure or a contract-invalid result run through
+  `basis_console.gateway.redaction` first, so `Authorization`, cookies, and
+  other credential-shaped fields never render even in diagnostic output.
+- **HTML-escaping of gateway-returned and submitted-input values** — fields the
+  console does not validate against a closed vocabulary (reason codes,
+  evaluator explanations, generic error text) rely on Jinja's default
+  autoescaping; this is now covered by dedicated tests asserting a crafted
+  `<script>` payload renders inert.
+- **Legacy-only fields disabled and server-rejected in operation-aware mode** —
+  Subject ID, Subject type, and Context are HTML-`disabled` (not just
+  CSS-hidden) when the operation-aware contract is selected, and a crafted
+  non-empty value submitted directly (bypassing the browser) is rejected
+  server-side before a request is built or a gateway call is made.
+- **No bearer-token display or subject inference** — `GATEWAY_BEARER_TOKEN` is
+  never displayed, logged, or rendered; live evaluation derives the subject
+  from the gateway's verified token, and the console never asserts or infers a
+  subject for the operation-aware contract, which has no field for one.
+
+### Notes
+
+- **Not production-ready.** A `v0.2.0` release means the console's interaction
+  patterns, boundaries, documentation, and quality gates are coherent enough for
+  early adopters to evaluate. It has not been audited or hardened for deployment
+  in live operational technology environments.
+- **Compatibility.** The legacy `/v1/evaluate` contract is unchanged and remains
+  the default; no request field, response contract, or evaluation behavior
+  changed for existing legacy usage. No migration is required to adopt `v0.2.0`.
+- **Version alignment.** `v0.1.0` and `v0.1.1` were tagged without a
+  corresponding `pyproject.toml`/`__init__.py` version bump or a versioned
+  changelog entry — all prior work accumulated under a single
+  `[0.1.0] - Unreleased` heading (preserved below) regardless of which tag it
+  shipped in. `v0.2.0` is the first release where the package version, this
+  changelog, and the Git tag agree; it does not reopen or invalidate the
+  `v0.1.0`/`v0.1.1` tags themselves.
+- The provisional `basis_console.vocabulary` bridge is a console-local mirror, not
+  the vocabulary authority; it is expected to be replaced by a future
+  `basis-schemas` package.
+
 ## [0.1.0] - Unreleased
 
 First release candidate of the human-facing operational interface for the BASIS
@@ -69,30 +158,6 @@ records, or own resource inventory.
   unreachable causes; and the Decision Simulator explains each evaluation outcome
   category and states plainly when the gateway returns no correlation ID or policy
   version. Display only — no new endpoints, pages, or evaluation behavior.
-- **Operation-aware evaluation** — a second, explicit evaluation contract on the
-  Decision Simulator (`evaluation_type=operation_aware`), alongside the legacy
-  `/v1/evaluate` contract (unchanged and still the default). Submits only
-  action / resource type / resource ID (no subject, no context — the
-  operation-aware endpoint has no field for either) to `basis-gateway`'s
-  `POST /v1/evaluate/operation-aware` and relays the kernel's governed result
-  verbatim: evaluation status, outcome (`allow` / `deny` / `not_applicable`,
-  kept distinct from a plain denial), governed failure reason, policy bundle
-  identity, reason code, evaluator explanation, and correlation/trace IDs —
-  each labelled by provenance (submitted input / returned evidence / console
-  explanation / future capability). Preview mode shows the exact request
-  without ever calling the gateway. A crafted non-empty legacy-only field
-  (context, subject ID, subject type) is rejected server-side regardless of
-  what the browser renders or disables. Training mode adds a dedicated
-  educational panel (ecosystem flow, provenance legend, vocabulary glossary,
-  and an explanation of the actual result) alongside the identical shared
-  workflow Operator mode uses — explanatory markup only, never a behavior
-  change. Hardened for release readiness: full degraded-state coverage
-  (including HTML-escaping of gateway-returned values, verified with
-  dedicated security tests), Operator/Training parity, no-JavaScript
-  server-rendered form correctness, redacted diagnostics, and a dedicated
-  manual smoke-test guide
-  (`docs/testing/operation-aware-simulator-smoke-test.md`). See
-  `docs/architecture.md`, Phases 16–20.
 - **Explicit architectural boundaries** documented throughout: the console does
   not evaluate, authenticate, own identity/audit/inventory, parse protocols, or
   call `basis-core`, and reaches the system only through the gateway.
@@ -113,3 +178,4 @@ records, or own resource inventory.
   `basis-schemas` package.
 
 [0.1.0]: https://github.com/basis-foundation/basis-console/releases/tag/v0.1.0
+[0.2.0]: https://github.com/basis-foundation/basis-console/compare/v0.1.1...v0.2.0

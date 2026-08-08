@@ -2,7 +2,7 @@
 
 ## Project Status
 
-`basis-console` is an early-stage project and a `v0.1.0` release candidate. It is
+`basis-console` is an early-stage project and a `v0.2.0` release candidate. It is
 a **human-facing operational interface** for the BASIS ecosystem. It is
 read-oriented and gateway-first: it observes, inspects, submits requests through
 `basis-gateway`, and explains the authorization model. It does **not** evaluate
@@ -19,8 +19,8 @@ period. There is no long-term-support branch yet.
 
 | Version            | Supported          |
 | ------------------ | ------------------ |
-| `0.1.x` (latest)   | :white_check_mark: |
-| `< 0.1.0`          | :x:                |
+| `0.2.x` (latest)   | :white_check_mark: |
+| `< 0.2.0`          | :x:                |
 
 ## Reporting a Vulnerability
 
