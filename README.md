@@ -281,7 +281,8 @@ Operator → basis-console → basis-gateway → basis-core
 
 - **Gateway-first.** The `basis_console.gateway` package is the single egress
   point and talks only to the gateway's HTTP surface (`/health`, `/ready`, and —
-  when configured — `/v1/evaluate`). The console never imports `basis-core`.
+  when configured — `/v1/evaluate` and `/v1/evaluate/operation-aware`). The
+  console never imports `basis-core`.
 - **No local authorization.** When the gateway is unreachable, the console
   surfaces nothing live and never substitutes local authorization logic or cached
   decisions.
@@ -315,14 +316,19 @@ privately per [`SECURITY.md`](SECURITY.md).
 - [`docs/architecture.md`](docs/architecture.md) — console boundaries, invariants,
   and phase notes.
 - [`docs/implementation/operation-aware-console-integration-plan.md`](docs/implementation/operation-aware-console-integration-plan.md)
-  — planning-only integration plan for consuming `basis-gateway`'s
-  `POST /v1/evaluate/operation-aware`. Status: **planning**; no operation-aware
-  runtime code has been implemented yet.
+  — the integration plan that scoped consuming `basis-gateway`'s
+  `POST /v1/evaluate/operation-aware`. The document itself predates and plans
+  the implementation; the operation-aware Decision Simulator flow it
+  describes has since been implemented and hardened (see `docs/architecture.md`,
+  Phases 16–20) and is available today under "Operation-aware evaluation"
+  below.
 - [`docs/releases/v0.1.0.md`](docs/releases/v0.1.0.md) — release notes for the
   `v0.1.0` candidate.
 - [`docs/release-checklist.md`](docs/release-checklist.md) — what must be true to
   tag a release.
 - [`docs/smoke-test.md`](docs/smoke-test.md) — manual smoke test for each run mode.
+- [`docs/testing/operation-aware-simulator-smoke-test.md`](docs/testing/operation-aware-simulator-smoke-test.md)
+  — manual smoke test for the operation-aware evaluation contract specifically.
 - [`CHANGELOG.md`](CHANGELOG.md) — notable changes.
 
 ## Repository structure

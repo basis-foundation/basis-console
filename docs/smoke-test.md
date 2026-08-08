@@ -4,6 +4,11 @@ A quick, repeatable manual check that `basis-console` runs and that every page
 renders in each supported mode. This is a human walkthrough, not an automated
 suite — the automated suite is `python -m pytest`.
 
+For the Decision Simulator's operation-aware evaluation contract
+specifically — degraded states, governed outcomes/failures, redacted
+diagnostics, and Operator/Training parity — see
+[`docs/testing/operation-aware-simulator-smoke-test.md`](testing/operation-aware-simulator-smoke-test.md).
+
 Pages to verify in every mode:
 
 ```

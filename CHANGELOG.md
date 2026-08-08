@@ -69,13 +69,38 @@ records, or own resource inventory.
   unreachable causes; and the Decision Simulator explains each evaluation outcome
   category and states plainly when the gateway returns no correlation ID or policy
   version. Display only — no new endpoints, pages, or evaluation behavior.
+- **Operation-aware evaluation** — a second, explicit evaluation contract on the
+  Decision Simulator (`evaluation_type=operation_aware`), alongside the legacy
+  `/v1/evaluate` contract (unchanged and still the default). Submits only
+  action / resource type / resource ID (no subject, no context — the
+  operation-aware endpoint has no field for either) to `basis-gateway`'s
+  `POST /v1/evaluate/operation-aware` and relays the kernel's governed result
+  verbatim: evaluation status, outcome (`allow` / `deny` / `not_applicable`,
+  kept distinct from a plain denial), governed failure reason, policy bundle
+  identity, reason code, evaluator explanation, and correlation/trace IDs —
+  each labelled by provenance (submitted input / returned evidence / console
+  explanation / future capability). Preview mode shows the exact request
+  without ever calling the gateway. A crafted non-empty legacy-only field
+  (context, subject ID, subject type) is rejected server-side regardless of
+  what the browser renders or disables. Training mode adds a dedicated
+  educational panel (ecosystem flow, provenance legend, vocabulary glossary,
+  and an explanation of the actual result) alongside the identical shared
+  workflow Operator mode uses — explanatory markup only, never a behavior
+  change. Hardened for release readiness: full degraded-state coverage
+  (including HTML-escaping of gateway-returned values, verified with
+  dedicated security tests), Operator/Training parity, no-JavaScript
+  server-rendered form correctness, redacted diagnostics, and a dedicated
+  manual smoke-test guide
+  (`docs/testing/operation-aware-simulator-smoke-test.md`). See
+  `docs/architecture.md`, Phases 16–20.
 - **Explicit architectural boundaries** documented throughout: the console does
   not evaluate, authenticate, own identity/audit/inventory, parse protocols, or
   call `basis-core`, and reaches the system only through the gateway.
 - Release and contributor documentation: `README.md`, `docs/architecture.md`,
   `docs/releases/v0.1.0.md`, `docs/release-checklist.md`, `docs/smoke-test.md`,
-  `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, and GitHub
-  issue/PR templates.
+  `docs/testing/operation-aware-simulator-smoke-test.md`, `SECURITY.md`,
+  `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, and GitHub issue/PR
+  templates.
 
 ### Notes
 

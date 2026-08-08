@@ -22,6 +22,15 @@ from basis_console.ui.views import router as ui_router
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VIEWS_PATH = REPO_ROOT / "src" / "basis_console" / "ui" / "views.py"
 SIMULATE_TEMPLATE_PATH = REPO_ROOT / "src" / "basis_console" / "ui" / "templates" / "simulate.html"
+OA_TRAINING_PARTIAL_PATH = (
+    REPO_ROOT
+    / "src"
+    / "basis_console"
+    / "ui"
+    / "templates"
+    / "partials"
+    / "operation_aware_training.html"
+)
 
 
 def test_only_one_post_simulate_route_exists():
@@ -103,3 +112,23 @@ def test_template_does_not_reconstruct_outcome_or_disposition_logic():
 def test_template_never_imports_or_references_basis_core():
     text = SIMULATE_TEMPLATE_PATH.read_text(encoding="utf-8")
     assert "basis_core" not in text
+
+
+def test_operation_aware_template_never_uses_safe_filter():
+    """No template in the operation-aware rendering path disables autoescaping.
+
+    Jinja's default autoescaping (no ``env.autoescape=False``, no per-file
+    opt-out) is the actual mechanism that renders gateway-returned and
+    submitted-input values inert (see the HTML-escaping tests in
+    ``test_simulate_operation_aware_routes.py``). A future edit adding
+    ``| safe`` (or the equivalent ``{% autoescape false %}`` block) to either
+    template would silently defeat that protection without any of those
+    black-box response-text tests necessarily catching it if the bypassed
+    value happened not to be exercised by that test's specific payload — this
+    is a static, permanent guard against introducing one at all.
+    """
+    for path in (SIMULATE_TEMPLATE_PATH, OA_TRAINING_PARTIAL_PATH):
+        text = path.read_text(encoding="utf-8")
+        assert "|safe" not in text.replace(" ", "")
+        assert "autoescape false" not in text
+        assert "autoescape False" not in text
