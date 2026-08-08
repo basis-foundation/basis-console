@@ -896,3 +896,191 @@ def test_bearer_token_never_rendered_in_oa_html():
     with gateway_client_app(_allow_handler) as client:
         response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
         assert TOKEN not in response.text
+
+
+# ---------------------------------------------------------------------------
+# HTML-escaping safety (PR 6) — reason_code, explanation, error_code/message,
+# and the redacted diagnostic body are opaque, gateway-authored strings the
+# console does not validate (unlike action/resource_type/resource_id, which
+# are drawn from a closed vocabulary or a restrictive regex before they can
+# ever reach a template). A malicious or merely careless gateway response
+# must still render inert: Jinja's default autoescaping (no `|safe` is used
+# anywhere in these templates) must turn markup-significant characters into
+# HTML entities rather than executable markup.
+# ---------------------------------------------------------------------------
+
+#  No internal quote characters: the diagnostic-body variant of this payload
+#  passes through `json.dumps()` before Jinja escapes it, and a quote inside
+#  the payload would come out backslash-escaped by json.dumps AND
+#  entity-escaped by Jinja (`\&#34;`), which is a different (still fully
+#  inert) string from the directly-rendered fields' plain `&#34;`. Avoiding
+#  quotes keeps one expected-escaped constant valid for both rendering paths.
+_XSS_PAYLOAD = "<script>alert(1)</script>"
+_XSS_ESCAPED = "&lt;script&gt;alert(1)&lt;/script&gt;"
+
+
+def test_malicious_reason_code_is_html_escaped_not_executed():
+    body = {**ALLOW_BODY, "reason_code": _XSS_PAYLOAD}
+    handler = _json_handler(200, body, **{"X-Correlation-ID": "corr-allow"})
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED in response.text
+
+
+def test_malicious_explanation_is_html_escaped_not_executed():
+    body = {**ALLOW_BODY, "explanation": _XSS_PAYLOAD}
+    handler = _json_handler(200, body, **{"X-Correlation-ID": "corr-allow"})
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED in response.text
+
+
+def test_malicious_generic_error_message_is_html_escaped_not_executed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": _XSS_PAYLOAD, "message": _XSS_PAYLOAD})
+
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED in response.text
+
+
+def test_malicious_diagnostic_body_is_html_escaped_not_executed():
+    """The raw, redacted diagnostic JSON (shown only when no governed body
+    exists) is rendered through the same auto-escaping `{{ }}` output as
+    every other value here — never `|safe` — so an attacker-controlled field
+    name or value embedded in an ungoverned response cannot execute."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"detail": _XSS_PAYLOAD})
+
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED in response.text
+
+
+FORBIDDEN_AFTER_VALIDATION_FAILURE = (
+    "Submitted request",  # oa_request_summary — no fabricated "what was sent"
+    "Evaluation result",  # oa_presentation — no fabricated evaluation
+    "Kernel outcome",
+    "Gateway disposition",
+)
+
+
+def test_malicious_resource_id_rejected_and_escaped_when_echoed_back_to_form():
+    """``resource_id`` is a free-text ``<input>`` and IS echoed back into its
+    ``value="..."`` attribute so an operator can see and correct what they
+    typed (``simulator.build_operation_aware_simulation`` → ``views.py``'s
+    ``ctx["values"]["resource_id"]`` → ``simulate.html``'s
+    ``value="{{ values.resource_id }}"``). A markup-bearing value fails
+    ``_ID_RE`` (the safe-string regex — no ``<``/``>``/``"``/``'``/``&`` is
+    ever a legal resource_id character, so this payload can never validate
+    successfully; only the "rejected and echoed back" path is reachable for
+    it) and must still render as inert, HTML-escaped text in that attribute,
+    never as executable markup, and must never reach a gateway call or a
+    fabricated result."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        calls.append(request.url.path)
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "resource_id": _XSS_PAYLOAD},
+        )
+        assert response.status_code == 200
+        # 1 & 2: raw payload absent; escaped form present, specifically in
+        # the resource_id input's echoed value attribute.
+        assert _XSS_PAYLOAD not in response.text
+        snippet = response.text[response.text.find('id="resource_id"') :][:200]
+        assert f'value="{_XSS_ESCAPED}"' in snippet
+        # 3: no unescaped event handler derived from the submitted value
+        # (the page's own static, console-authored <script> blocks are
+        # unrelated and expected — see test_malicious_resource_id_preview_
+        # mode_also_escapes_and_makes_no_call and this file's other tests).
+        assert "onerror=" not in response.text
+        # The known validation error is shown.
+        assert "simple safe string" in response.text
+        # 5 & 6: no gateway call, no fabricated decision/evidence.
+        assert calls == []
+        for forbidden in FORBIDDEN_AFTER_VALIDATION_FAILURE:
+            assert forbidden not in response.text
+
+
+def test_malicious_action_verb_is_never_reflected_raw_or_escaped():
+    """``action_verb`` is a closed-vocabulary ``<select>``: the template only
+    ever compares ``values.action_verb`` against each known
+    ``ACTION_VERBS`` entry (``{% if values.action_verb == verb %}``) — the
+    submitted string itself is never printed anywhere, escaped or not. This
+    is a *stronger* safety property than escaping (nothing to escape because
+    nothing is echoed), and this test proves that property holds rather than
+    merely asserting the weaker "escaped" outcome."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        calls.append(request.url.path)
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "action_verb": _XSS_PAYLOAD},
+        )
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED not in response.text  # not merely escaped — absent entirely
+        assert "Action verb must be one of" in response.text
+        assert calls == []
+        for forbidden in FORBIDDEN_AFTER_VALIDATION_FAILURE:
+            assert forbidden not in response.text
+
+
+def test_malicious_resource_type_is_never_reflected_raw_or_escaped():
+    """Same non-reflection property as ``action_verb`` — ``resource_type`` is
+    also a closed-vocabulary ``<select>`` (``RESOURCE_TYPES``)."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        calls.append(request.url.path)
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "resource_type": _XSS_PAYLOAD},
+        )
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        assert _XSS_ESCAPED not in response.text
+        assert "Resource type must be one of" in response.text
+        assert calls == []
+        for forbidden in FORBIDDEN_AFTER_VALIDATION_FAILURE:
+            assert forbidden not in response.text
+
+
+def test_malicious_resource_id_preview_mode_also_escapes_and_makes_no_call():
+    """The preview path (no gateway configured/requested) must behave
+    identically with respect to escaping and non-fabrication — preview mode
+    already never calls the gateway by construction, but this confirms the
+    echoed value is still safely escaped there too."""
+    with gateway_client_app(_allow_handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "preview", "resource_id": _XSS_PAYLOAD},
+        )
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        snippet = response.text[response.text.find('id="resource_id"') :][:200]
+        assert f'value="{_XSS_ESCAPED}"' in snippet
+        assert "simple safe string" in response.text
+        for forbidden in FORBIDDEN_AFTER_VALIDATION_FAILURE:
+            assert forbidden not in response.text

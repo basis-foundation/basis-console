@@ -251,6 +251,78 @@ def test_neither_mode_changes_authorization_behavior(monkeypatch):
         assert "outcome allow" not in body.lower()
 
 
+# ---------------------------------------------------------------------------
+# Submitted-input HTML-escaping parity (PR 6 correction)
+# ---------------------------------------------------------------------------
+#
+# Mirrors test_simulate_operation_aware_routes.py's
+# test_malicious_resource_id_rejected_and_escaped_when_echoed_back_to_form —
+# the representative submitted-input escaping case (resource_id is the only
+# one of the three fields that is ever echoed back into the page at all;
+# action_verb/resource_type are closed-vocabulary <select> controls that are
+# never reflected, escaped or not — see that file's own tests for both
+# fields). This proves the escaping behavior, the validation outcome, and
+# the zero-gateway-call behavior are identical in both presentation modes,
+# and that Training mode adds no additional unescaped content around it.
+
+_XSS_PAYLOAD = "<script>alert(1)</script>"
+_XSS_ESCAPED = "&lt;script&gt;alert(1)&lt;/script&gt;"
+
+
+def test_both_modes_escape_malicious_submitted_resource_id_identically(monkeypatch):
+    calls: dict[str, list[str]] = {"operator": [], "training": []}
+
+    def make_handler(bucket: str):
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            calls[bucket].append(request.url.path)
+            return httpx.Response(200, json=ALLOW_BODY)
+
+        return handler
+
+    with _mode_client(monkeypatch, None, make_handler("operator")) as operator:
+        op = operator.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "resource_id": _XSS_PAYLOAD},
+        )
+    with _mode_client(monkeypatch, "training", make_handler("training")) as training:
+        tr = training.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "resource_id": _XSS_PAYLOAD},
+        )
+
+    # Same route status in both modes.
+    assert op.status_code == tr.status_code == 200
+
+    for label, response in (("operator", op), ("training", tr)):
+        # Same validation outcome.
+        assert "simple safe string" in response.text
+        # Same escaping: raw payload absent, escaped form present in the
+        # echoed form value, in both modes.
+        assert _XSS_PAYLOAD not in response.text, label
+        snippet = response.text[response.text.find('id="resource_id"') :][:200]
+        assert f'value="{_XSS_ESCAPED}"' in snippet, label
+        # No fabricated evaluation/evidence in either mode. Checked as the
+        # exact <dt>/<dd> markup the live result section uses (not just the
+        # bare phrase "Kernel outcome") because Training mode's always-on
+        # ecosystem-flow table legitimately mentions "7. Kernel outcome" as
+        # static educational prose regardless of validation state — that is
+        # not a fabricated evaluation result and must not be confused with
+        # one.
+        assert "Evaluation result</h3>" not in response.text, label
+        assert "<dt>Kernel outcome</dt>" not in response.text, label
+        assert "<dt>Gateway disposition</dt>" not in response.text, label
+
+    # Same (zero) number of gateway calls in both modes — validation failed
+    # before either mode's route code could reach GatewayClient.
+    assert calls["operator"] == calls["training"] == []
+
+    # Training mode's only permitted difference is additional
+    # console-authored educational markup elsewhere on the page — it must
+    # not introduce any *additional* reflection of the submitted value.
+    assert tr.text.count(_XSS_PAYLOAD) == op.text.count(_XSS_PAYLOAD) == 0
+    assert tr.text.count(_XSS_ESCAPED) == op.text.count(_XSS_ESCAPED) == 1
+
+
 def test_training_mode_may_add_banner_without_changing_oa_workflow(monkeypatch):
     with _mode_client(monkeypatch, "training") as training:
         response = training.post("/simulate", data={**_OA_FORM, "mode": "preview"})

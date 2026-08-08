@@ -1350,3 +1350,115 @@ no AI-generated explanation, and no change to Operator-mode rendering, legacy
 `/v1/evaluate` behavior, or any degraded-state HTTP classification. Full
 degraded-state parity coverage, further diagnostics refinement, documentation
 polish, and release readiness remain PR 6 scope.
+
+## Phase 20 operation-aware integration hardening and release readiness
+
+Phase 20 (integration-plan PR 6) closes the operation-aware Decision Simulator
+milestone Phases 16–19 built. It is a hardening and verification pass, not a
+feature-expansion PR: it adds no operation-aware control, request field,
+endpoint, policy feature, identity capability, or gateway behavior. Its job
+was to verify the already-integrated system end to end, close any
+demonstrated gaps in that verification, and document the milestone as
+complete for its approved scope.
+
+### Baseline verified, not assumed
+
+Before any change, the branch (`chore/operation-aware-integration-hardening`,
+starting commit `31fbaed4`), a clean working tree, and the canonical quality
+gates were confirmed rather than taken on faith: `python -m pytest` (601
+passed), `ruff check .` (clean), `ruff format --check .` (65 files already
+formatted), and `mypy src` (strict; success across 23 source files, after
+routing mypy's SQLite cache away from a FUSE-mounted sandbox directory that
+does not support the cache's write mode — a sandbox-environment detail, not a
+repository defect).
+
+### Gap analysis and what PR 6 actually changed
+
+Phases 16–19 already delivered thorough, independently-verified coverage of
+nearly every hardening area this PR was scoped to check: the full
+`OperationAwareEvaluationStatus` vocabulary is exercised at the route level
+(not just the presentation-model level), every governed outcome and failure
+reason has dedicated route tests, correlation-ID reconciliation and
+contract-invalid handling are covered exhaustively in
+`tests/test_gateway_evaluate_operation_aware.py`, disabled-state (not just
+CSS-hidden) form behavior is asserted directly, and Operator/Training parity
+already has a dedicated test module. Re-auditing against every hardening area
+in the PR 6 task turned up a small number of genuine, narrow gaps rather than
+a broad rewrite:
+
+- **No test proved HTML-escaping of gateway-returned, console-unvalidated
+  values** (`reason_code`, `explanation`, a generic error's `error`/`message`,
+  and the redacted diagnostic body) — a real security-relevant coverage gap,
+  since these fields (unlike `action`/`resource_type`/`resource_id`, which are
+  drawn from a closed vocabulary or a restrictive regex before a request is
+  ever built) are opaque strings the console does not validate. Jinja's
+  default autoescaping (no `|safe` is used anywhere in these templates)
+  already renders them inert; the gap was in *proving* it, not in the
+  behavior itself. Closed with five new tests in
+  `tests/test_simulate_operation_aware_routes.py` using a representative
+  `<script>alert(1)</script>` payload, asserting the raw payload is absent
+  from the rendered page and the entity-escaped form is present.
+- **Long opaque tokens (reason codes, correlation/trace IDs, diagnostic text)
+  had no wrap rule** in the `.kv` grid or `.mono`/`code` styles, so a single
+  long unbroken token could overflow the fixed-width label column on a narrow
+  viewport instead of wrapping. Closed with a narrow `overflow-wrap: anywhere`
+  addition to those two rules in `style.css` — no layout redesign.
+- **`README.md` stated the operation-aware integration plan was still
+  "planning" with "no operation-aware runtime code... implemented yet"** —
+  true when that document was written, false since Phase 16, and actively
+  misleading in a release-readiness review. Corrected to describe the
+  document as the plan that scoped the (now-implemented) feature, pointing at
+  this file's Phase 16–20 notes. The adjacent "single egress point" bullet
+  was also missing `/v1/evaluate/operation-aware` from its endpoint list;
+  added.
+- **No manual smoke-test guide covered the operation-aware contract
+  specifically** — `docs/smoke-test.md` predates Phase 16 and only exercises
+  the legacy contract. Added
+  `docs/testing/operation-aware-simulator-smoke-test.md` (17 scenarios:
+  mode/page loads, preview, disabled-control verification, crafted-field
+  rejection, the full live outcome/failure/degraded-state matrix, redacted
+  diagnostics, secret-absence, and Operator/Training parity), linked from
+  `docs/smoke-test.md` and this README.
+- **`CHANGELOG.md`'s `[0.1.0] - Unreleased` section never mentioned the
+  operation-aware capability** despite four prior shipped phases — a
+  release-readiness gate (`docs/release-checklist.md`) this repository already
+  holds itself to. Added one `### Added` entry summarizing the capability.
+
+Everything else audited against the PR 6 task's ten hardening areas was
+already correctly implemented and already covered by an existing, focused
+test — extending that coverage further would have been the "inflate test
+counts with redundant assertions" anti-pattern the task explicitly warns
+against, so it was left as-is and is itemized as verified-not-changed in the
+PR's completion report rather than re-tested here.
+
+### Internal invariant failures remain unconverted
+
+`operation_aware_presentation.PresentationBuildError` (raised only when
+`OperationAwareEvaluationResult.status`/`.response` presence disagree — a
+contract drift between this module and `gateway.operation_aware_models`, not
+a data condition a real gateway response can produce) is deliberately left
+unhandled by `ui/views.py`. No broad `except Exception` was added around
+`build_operation_aware_presentation()` to "keep the page alive": doing so
+would risk converting a programming defect into a fabricated `DENY`,
+`NOT_APPLICABLE`, or evaluator-failure result, which the PR 6 task explicitly
+forbids. A real invariant violation still surfaces as an unhandled exception
+(a 500 from the ASGI stack), which is the correct, honest failure mode for a
+condition that should never occur — distinct from every genuine degraded
+state above, all of which render safely through the existing typed result
+model.
+
+### What Phase 20 does not do
+
+No new operation-aware endpoint, request field, context support,
+producer-field support, subject-field support, identity decoding, token
+handling, policy evaluation, trace retrieval, trace viewer, audit-event
+retrieval or viewer, diagnostics aggregation from external systems, or
+`basis-core`/gateway/schema/adapter change. Legacy `/v1/evaluate` remains the
+default and is unchanged. Operator and Training modes continue to share the
+one runtime path Phase 18 established; Training mode continues to add
+explanation only. Identity telemetry, trace retrieval, an audit-event viewer,
+and broader operator investigation workflows remain genuine future work,
+tracked separately from this milestone.
+
+**The `basis-console` operation-aware integration milestone (integration-plan
+PRs 1–6 / architecture Phases 16–20) is complete for its approved scope.**

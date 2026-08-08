@@ -142,9 +142,13 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 
 .kv { display: grid; grid-template-columns: 9rem 1fr; gap: 0.3rem 1rem; margin: 0; }
 .kv dt { color: var(--muted); }
-.kv dd { margin: 0; }
+/* Long opaque values (reason codes, correlation/trace IDs, diagnostic text)
+   have no natural break points; without this, a single long token would
+   overflow the fixed-width `.kv` grid column instead of wrapping (PR 6
+   template-robustness hardening). */
+.kv dd { margin: 0; overflow-wrap: anywhere; }
 
-code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; overflow-wrap: anywhere; }
 code {
   background: var(--surface-2);
   border: 1px solid var(--border);
