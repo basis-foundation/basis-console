@@ -120,11 +120,32 @@ OPERATION_AWARE_NO_EVAL_NOTICE = (
 # all, unlike the legacy path's context textarea (Section 4.5 of the
 # integration plan).
 OPERATION_AWARE_CONTEXT_NOTICE = (
-    "Operation-aware evaluation submits only action, resource type, and "
-    "resource ID — no subject and no context. Unlike legacy evaluation, this "
-    "endpoint has no field for caller-supplied context: operation-aware "
-    "context is owned by trusted operation producers (adapters, identity), "
-    "not by an ordinary console session, so there is no context control here."
+    "Operation-aware evaluation submits only action, resource type, resource "
+    "ID, and an optional caller-supplied request ID — no subject and no "
+    "context. Unlike legacy evaluation, this endpoint has no field for "
+    "caller-supplied context: operation-aware context is owned by trusted "
+    "operation producers (adapters, identity), not by an ordinary console "
+    "session, so there is no context control here."
+)
+
+# Note explaining the caller-supplied request_id boundary. Distinct from
+# every other operation-aware note: unlike context/subject, request_id IS a
+# genuine field on the operation-aware wire contract, but it must never be
+# confused with a gateway-returned value (the returned request_id,
+# correlation_id, or trace_id shown after evaluation) or generated/defaulted
+# by the console itself.
+OPERATION_AWARE_REQUEST_ID_NOTICE = (
+    "Optional caller-supplied request ID. This console exposes it only on "
+    "the operation-aware evaluation form — the legacy /v1/evaluate contract "
+    "also defines a request_id field, but this form does not submit one on "
+    "that path. When you supply a value, the gateway preserves it as-is; it "
+    "is only when this field is left blank that the gateway defaults it to "
+    "its own generated correlation_id. The console never generates or "
+    "defaults this value itself. This is the normalized caller-supplied "
+    "value you submit, not a gateway confirmation of it, and it is a "
+    "distinct provenance source from the gateway-returned request_id, "
+    "correlation_id, or trace_id shown after evaluation — those may share "
+    "the same string value without being the same fact."
 )
 
 # Empty form values used to render the simulator before any input is submitted.
@@ -138,6 +159,7 @@ _EMPTY_VALUES = {
     "resource_type": "",
     "resource_id": "",
     "context": "",
+    "request_id": "",
     "composed_action": "",
     "composed_resource_id": "",
 }
@@ -254,6 +276,7 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
     ctx["operation_aware_no_eval_notice"] = OPERATION_AWARE_NO_EVAL_NOTICE
     ctx["operation_aware_context_notice"] = OPERATION_AWARE_CONTEXT_NOTICE
+    ctx["operation_aware_request_id_notice"] = OPERATION_AWARE_REQUEST_ID_NOTICE
     ctx["action_verbs"] = ACTION_VERBS
     ctx["resource_types"] = RESOURCE_TYPES
     ctx["field_explanations"] = FIELD_EXPLANATIONS
@@ -462,6 +485,7 @@ def _render_operation_aware_submission(
         "resource_type": oa_result.values.get("resource_type", ""),
         "resource_id": oa_result.values.get("resource_id", ""),
         "context": (form.get("context") or "").strip(),
+        "request_id": oa_result.values.get("request_id", ""),
         "composed_action": "",
         "composed_resource_id": "",
     }
@@ -476,6 +500,7 @@ def _render_operation_aware_submission(
         "action": oa_request.action,
         "resource_type": oa_request.resource_type,
         "resource_id": oa_request.resource_id,
+        "request_id": oa_request.request_id,
     }
 
     if mode == "gateway":

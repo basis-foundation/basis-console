@@ -25,8 +25,23 @@ with no network code), never ``GatewayClient`` or any I/O capability. The
 operation-aware request surface is deliberately narrower than the legacy
 builder's: no subject, no context (Section 4.5 of the operation-aware console
 integration plan — the endpoint has no field for caller-supplied context), and
-only ``action`` / ``resource_type`` / ``resource_id`` from the shared
-action/resource composition grammar in :func:`build_gateway_request`.
+only ``action`` / ``resource_type`` / ``resource_id`` / an *optional*
+caller-supplied ``request_id`` from the shared action/resource composition
+grammar in :func:`build_gateway_request` plus the gateway's existing
+``request_id`` contract field (see ``OperationAwareEvaluationRequest
+.request_id``). ``request_id`` is carried through as the normalized
+caller-supplied value (stripped of surrounding whitespace only — no other
+transformation) — the console never generates one, never defaults it to a
+correlation id or trace id, and never treats it as gateway-returned evidence;
+it is always tagged ``ContentSource.SUBMITTED_INPUT`` by the presentation
+layer, distinct in *provenance* from the gateway's own returned
+``request_id``/``correlation_id``/``trace_id`` (the gateway may echo a
+submitted value back, so the strings can coincide even though the source
+differs). Note that ``request_id`` is also a genuine field on the legacy
+``EvaluateRequest`` contract (``basis-gateway``'s ``api/schemas.py``); this
+console simply does not expose a form control for it on the legacy path in
+this milestone, and :func:`build_simulation` neither validates nor rejects
+it.
 
 Composition is the gateway's job (Phase 7 alignment):
   ``basis-gateway`` is the action/resource composition boundary. The console
@@ -130,6 +145,19 @@ FIELD_EXPLANATIONS: tuple[tuple[str, str], ...] = (
         "context",
         "Optional key=value attributes a policy condition might consider "
         "(e.g. maintenance_window=true). One entry per line.",
+    ),
+    (
+        "request_id",
+        "Optional caller-supplied identifier. This console exposes it only on "
+        "the operation-aware evaluation form; the legacy /v1/evaluate contract "
+        "also defines a request_id field, but this form does not submit one on "
+        "that path. When left blank, the gateway defaults it to its own "
+        "generated correlation_id; the console never generates or defaults "
+        "this value itself. This is the normalized caller-supplied value you "
+        "submit, not a gateway confirmation of it — it is a distinct "
+        "provenance source from the gateway-returned request_id, "
+        "correlation_id, or trace_id shown after evaluation, even when their "
+        "string values happen to match.",
     ),
 )
 
@@ -559,6 +587,17 @@ def parse_evaluation_type(raw: str | None) -> EvaluationType | None:
 # accept-and-discard. The browser additionally disables (not merely hides)
 # these controls when operation-aware is selected — see simulate.html — but
 # this server-side check is the actual enforcement boundary.
+#
+# request_id IS part of the operation-aware wire contract (unlike context) —
+# ``OperationAwareEvaluationRequest.request_id`` — so it is accepted here
+# (optionally) rather than rejected. The pinned gateway model defines it as a
+# plain ``str | None`` with no request-ID-specific safe-character grammar and
+# no request-ID-specific maximum length, so this module applies neither: the
+# normalized (whitespace-stripped) caller-supplied value is carried through
+# unchanged, never generated or defaulted by the console, and never treated
+# as anything other than SUBMITTED_INPUT once it reaches
+# ``operation_aware_presentation``. Rendering safety for this opaque value is
+# the Jinja auto-escaping boundary's job, not input validation's.
 
 OPERATION_AWARE_CONTEXT_REJECTED_MESSAGE = (
     "Operation-aware evaluation does not accept a context value. The gateway's "
@@ -621,14 +660,14 @@ class OperationAwareSimulationResult:
     """Outcome of validating operation-aware simulator input.
 
     ok       True when a valid OperationAwareEvaluationRequest was built.
-    request  The typed request (only when ok); else None. Carries only
-             action / resource_type / resource_id — no subject, no context,
-             no caller-supplied request_id (not exposed in this milestone;
-             see the integration plan's "Initially exposed fields").
+    request  The typed request (only when ok); else None. Carries
+             action / resource_type / resource_id and an optional
+             caller-supplied request_id — no subject, no context.
     errors   Ordered, user-friendly messages (empty when ok).
     field_errors  Per-field error messages keyed by field name, for inline UI.
-    values   The (stripped) submitted action_verb/resource_type/resource_id,
-             echoed back to repopulate the form on both success and failure.
+    values   The (stripped) submitted action_verb/resource_type/resource_id/
+             request_id, echoed back to repopulate the form on both success
+             and failure.
     """
 
     ok: bool
@@ -646,7 +685,15 @@ def build_operation_aware_simulation(raw: dict[str, str]) -> OperationAwareSimul
     fields and vocabulary (:data:`ACTION_VERBS`, :data:`RESOURCE_TYPES`) and
     its :func:`build_gateway_request` composition grammar — the composition
     rules are identical between the two endpoints, so they are not
-    reimplemented here.
+    reimplemented here. Additionally accepts an *optional* caller-supplied
+    ``request_id`` (a genuine field on the operation-aware wire contract,
+    unlike ``context``/``subject_id``/``subject_type``): when blank it is
+    simply omitted from the built request (the gateway then defaults it to
+    its own generated ``correlation_id`` — this module never generates or
+    defaults that value itself); when present it is carried through as the
+    normalized (whitespace-stripped) caller-supplied value, with no further
+    validation — the pinned gateway contract defines no request-ID-specific
+    grammar or length limit, so none is imposed here.
 
     A non-empty value for any field in :data:`OPERATION_AWARE_LEGACY_ONLY_FIELDS`
     (``context``, ``subject_id``, ``subject_type``) in ``raw`` is rejected
@@ -659,11 +706,13 @@ def build_operation_aware_simulation(raw: dict[str, str]) -> OperationAwareSimul
     action_verb = (raw.get("action_verb") or "").strip()
     resource_type = (raw.get("resource_type") or "").strip()
     resource_id = (raw.get("resource_id") or "").strip()
+    request_id = (raw.get("request_id") or "").strip()
 
     values = {
         "action_verb": action_verb,
         "resource_type": resource_type,
         "resource_id": resource_id,
+        "request_id": request_id,
     }
 
     legacy_errors, legacy_field_errors = _reject_legacy_only_fields(raw)
@@ -715,6 +764,16 @@ def build_operation_aware_simulation(raw: dict[str, str]) -> OperationAwareSimul
             errors.append(msg)
             field_errors["resource_id"] = msg
 
+    # request_id is OPTIONAL — a blank value means "let the gateway default
+    # it to the generated correlation_id"; this module never fabricates a
+    # value in its place. The pinned gateway model defines it as a plain
+    # ``str | None`` with no request-ID-specific safe-character grammar or
+    # maximum length, so no such validation is applied here — a
+    # gateway-valid, opaque caller-supplied string is carried through
+    # unchanged (normalized only by the whitespace strip above). Rendering
+    # safety comes from Jinja's auto-escaping boundary, not from narrowing
+    # which characters this field accepts.
+
     if errors:
         return OperationAwareSimulationResult(
             ok=False, request=None, errors=errors, field_errors=field_errors, values=values
@@ -739,7 +798,10 @@ def build_operation_aware_simulation(raw: dict[str, str]) -> OperationAwareSimul
         action=str(payload["action"]),
         resource_type=str(payload["resource_type"]) if payload.get("resource_type") else None,
         resource_id=str(payload["resource_id"]) if payload.get("resource_id") else None,
-        request_id=None,
+        # Normalized (whitespace-stripped) caller-supplied value, or omitted;
+        # never generated, never defaulted to a correlation id or trace id
+        # here.
+        request_id=request_id or None,
     )
     return OperationAwareSimulationResult(
         ok=True, request=request, errors=[], field_errors={}, values=values

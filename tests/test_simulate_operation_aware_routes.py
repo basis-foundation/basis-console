@@ -287,11 +287,16 @@ def test_progressive_enhancement_script_disables_and_reenables_together(client):
     """
     html = client.get("/simulate").text
     script_start = html.index("Progressive enhancement")
-    script = html[script_start : script_start + 2000]
+    script_end = html.index("</script>", script_start)
+    script = html[script_start:script_end]
     assert "legacyFields.disabled = hide" in script
     assert "legacyContext.disabled = hide" in script
     assert 'legacyFields.classList.toggle("is-hidden", hide)' in script
     assert 'legacyContext.classList.toggle("is-hidden", hide)' in script
+    # Operation-aware-only fields (request_id) toggle in the opposite sense
+    # of the legacy-only fields, within the same script block.
+    assert "oaOnlyFields.disabled = hideOa" in script
+    assert 'oaOnlyFields.classList.toggle("is-hidden", hideOa)' in script
 
 
 # ---------------------------------------------------------------------------
@@ -1065,6 +1070,220 @@ def test_malicious_resource_type_is_never_reflected_raw_or_escaped():
         assert calls == []
         for forbidden in FORBIDDEN_AFTER_VALIDATION_FAILURE:
             assert forbidden not in response.text
+
+
+# ---------------------------------------------------------------------------
+# Caller-supplied request_id (optional, operation-aware only)
+# ---------------------------------------------------------------------------
+
+
+def test_request_id_field_disabled_for_legacy_enabled_for_operation_aware(client):
+    legacy_response = client.post(
+        "/simulate",
+        data={
+            "evaluation_type": "legacy",
+            "subject_id": "operator-jane",
+            "subject_type": "user",
+            "action_verb": "read",
+            "resource_type": "ahu",
+            "resource_id": "rooftop-1",
+        },
+    )
+    legacy_snippet = _fieldset_snippet(legacy_response.text, "oa-only-fields")
+    assert "disabled" in legacy_snippet
+    assert "is-hidden" in legacy_snippet
+
+    oa_response = client.post("/simulate", data={**_OA_FORM, "mode": "preview"})
+    oa_snippet = _fieldset_snippet(oa_response.text, "oa-only-fields")
+    assert "disabled" not in oa_snippet
+    assert "is-hidden" not in oa_snippet
+
+
+def test_oa_gateway_call_includes_submitted_request_id_in_body():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = __import__("json").loads(request.content.decode("utf-8"))
+        return httpx.Response(200, json=ALLOW_BODY, headers={"X-Correlation-ID": "corr-allow"})
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "request_id": "operator-chosen-req-1"},
+        )
+        assert response.status_code == 200
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["request_id"] == "operator-chosen-req-1"
+
+
+def test_oa_gateway_call_omits_request_id_when_not_submitted():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = __import__("json").loads(request.content.decode("utf-8"))
+        return httpx.Response(200, json=ALLOW_BODY, headers={"X-Correlation-ID": "corr-allow"})
+
+    with gateway_client_app(handler) as client:
+        response = client.post("/simulate", data={**_OA_FORM, "mode": "gateway"})
+        assert response.status_code == 200
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert "request_id" not in body
+
+
+def test_oa_preview_shows_submitted_request_id(client):
+    response = client.post(
+        "/simulate",
+        data={**_OA_FORM, "mode": "preview", "request_id": "operator-chosen-req-1"},
+    )
+    assert response.status_code == 200
+    assert "Submitted request" in response.text
+    assert "operator-chosen-req-1" in response.text
+
+
+def test_oa_preview_domain_default_note_shown_when_request_id_omitted(client):
+    response = client.post("/simulate", data={**_OA_FORM, "mode": "preview"})
+    assert response.status_code == 200
+    assert "gateway will default it to the generated correlation_id" in response.text
+
+
+def test_request_id_on_legacy_preview_submission_is_accepted_not_rejected(client):
+    """A caller-supplied request_id alongside a legacy submission is not an
+    invented rejection case: the legacy ``EvaluateRequest`` contract genuinely
+    has a ``request_id`` field (``basis-gateway``'s ``api/schemas.py``) — this
+    console simply does not expose or forward it on the legacy path in this
+    milestone. The submission must still succeed normally."""
+    response = client.post(
+        "/simulate",
+        data={
+            "evaluation_type": "legacy",
+            "subject_id": "operator-jane",
+            "subject_type": "user",
+            "action_verb": "read",
+            "resource_type": "ahu",
+            "resource_id": "rooftop-1",
+            "request_id": "caller-chosen-id",
+        },
+    )
+    assert response.status_code == 200
+    assert "does not accept a caller-supplied request ID" not in response.text
+    assert "Normalized request preview" in response.text
+
+
+def test_request_id_on_legacy_gateway_submission_is_never_forwarded():
+    """The console's existing legacy request builder does not forward
+    request_id. A supplied value is therefore not part of the legacy request
+    body this console sends, preserving pre-Run-#2 behavior. This is not a
+    gateway contract limitation: basis-gateway's legacy EvaluateRequest does
+    define request_id. The submission still succeeds and calls the gateway
+    normally."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = __import__("json").loads(request.content.decode("utf-8"))
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={
+                "evaluation_type": "legacy",
+                "mode": "gateway",
+                "subject_id": "operator-jane",
+                "subject_type": "user",
+                "action_verb": "read",
+                "resource_type": "ahu",
+                "resource_id": "rooftop-1",
+                "request_id": "caller-chosen-id",
+            },
+        )
+        assert response.status_code == 200
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert "request_id" not in body
+
+
+def test_opaque_request_id_with_unconventional_characters_is_accepted_and_forwarded():
+    """The pinned gateway model imposes no request-ID-specific safe-character
+    grammar or length limit, so a value outside the resource-ID grammar
+    (spaces, punctuation) is accepted, not rejected, and is forwarded to the
+    gateway exactly as submitted (normalized only by the whitespace strip
+    every form field gets)."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = __import__("json").loads(request.content.decode("utf-8"))
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "request_id": "caller value; punctuation!"},
+        )
+        assert response.status_code == 200
+        assert "simple safe string" not in response.text
+        assert "Submitted request" in response.text
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["request_id"] == "caller value; punctuation!"
+
+
+def test_malicious_request_id_is_accepted_forwarded_and_escaped_when_rendered():
+    """A markup-bearing request_id is accepted (the gateway's plain-string
+    contract has no character grammar to violate) and forwarded verbatim to
+    the gateway; rendering safety comes entirely from Jinja's escaping
+    boundary. The raw payload must never appear unescaped anywhere in the
+    response, including the echoed form value and the submitted-request
+    summary."""
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = __import__("json").loads(request.content.decode("utf-8"))
+        return _allow_handler(request)
+
+    with gateway_client_app(handler) as client:
+        response = client.post(
+            "/simulate",
+            data={**_OA_FORM, "mode": "gateway", "request_id": _XSS_PAYLOAD},
+        )
+        assert response.status_code == 200
+        assert _XSS_PAYLOAD not in response.text
+        form_snippet = response.text[response.text.find('id="request_id"') :][:200]
+        assert f'value="{_XSS_ESCAPED}"' in form_snippet
+        summary_index = response.text.find("Request ID (submitted)")
+        assert summary_index != -1
+        summary_snippet = response.text[summary_index:][:300]
+        assert _XSS_ESCAPED in summary_snippet
+        assert "Submitted request" in response.text
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["request_id"] == _XSS_PAYLOAD
+
+
+def test_malicious_request_id_in_preview_mode_is_escaped_and_makes_no_gateway_call(client):
+    """Preview mode never calls the gateway regardless of evaluation_type —
+    that boundary is unrelated to request_id validation. A markup-bearing
+    request_id is accepted (not rejected) and rendered safely escaped, both
+    in the echoed form value and the submitted-request preview."""
+    response = client.post(
+        "/simulate",
+        data={**_OA_FORM, "mode": "preview", "request_id": _XSS_PAYLOAD},
+    )
+    assert response.status_code == 200
+    assert _XSS_PAYLOAD not in response.text
+    form_snippet = response.text[response.text.find('id="request_id"') :][:200]
+    assert f'value="{_XSS_ESCAPED}"' in form_snippet
+    # Other valid fields remain correctly echoed alongside the accepted request_id.
+    resource_snippet = response.text[response.text.find('id="resource_id"') :][:200]
+    assert 'value="rooftop-1"' in resource_snippet
+    assert "Submitted request" in response.text
+    assert "preview — not yet evaluated" in response.text
 
 
 def test_malicious_resource_id_preview_mode_also_escapes_and_makes_no_call():
