@@ -59,6 +59,7 @@
     </fieldset>
 
     {% set legacy_fields_disabled = evaluation_type == "operation_aware" %}
+    {% set oa_only_fields_disabled = evaluation_type != "operation_aware" %}
     <fieldset id="legacy-only-fields" {% if legacy_fields_disabled %}disabled{% endif %}
               class="{% if legacy_fields_disabled %}is-hidden{% endif %}">
       <label for="subject_id">Subject ID</label>
@@ -73,6 +74,15 @@
     {% if evaluation_type == "operation_aware" %}
       <p class="notice">{{ operation_aware_context_notice }}</p>
     {% endif %}
+
+    <fieldset id="oa-only-fields" {% if oa_only_fields_disabled %}disabled{% endif %}
+              class="{% if oa_only_fields_disabled %}is-hidden{% endif %}">
+      <label for="request_id">Request ID (optional, operation-aware only)</label>
+      <input id="request_id" name="request_id" type="text" value="{{ values.request_id }}"
+             placeholder="optional — leave blank to let the gateway default it"
+             autocomplete="off">
+      <p class="muted">{{ operation_aware_request_id_notice }}</p>
+    </fieldset>
 
     <label for="action_verb">Action verb</label>
     <select id="action_verb" name="action_verb">
@@ -163,28 +173,30 @@
   <script>
     // Progressive enhancement: hides AND disables the legacy-only fields
     // (subject/context — both <fieldset> elements) based on the
-    // evaluation-type radio buttons, so switching without a page reload
-    // feels immediate and so the browser will not submit their values while
-    // operation-aware is selected (a disabled form control is never part of
-    // the submitted form data — CSS visibility alone does not stop
-    // submission). Toggling `.disabled` on a <fieldset> disables every
-    // descendant control in one step. Switching back to legacy re-enables
-    // them without clearing whatever the user had typed.
+    // evaluation-type radio buttons, so switching feels immediate and the
+    // browser won't submit their values while operation-aware is selected
+    // (a disabled control is never part of submitted form data — CSS
+    // visibility alone does not stop submission). `.disabled` on a
+    // <fieldset> disables every descendant control in one step. Switching
+    // back to legacy re-enables them without clearing typed values.
     //
-    // This is still only a UX nicety, not the enforcement boundary: with
-    // JavaScript disabled, the page falls back to whatever the server
-    // rendered for the last-submitted evaluation_type (see simulate.html's
-    // `legacy_fields_disabled` server-side conditional), and regardless of
-    // what the browser does or does not disable/hide, the server
-    // independently and unconditionally rejects a non-empty context,
-    // subject_id, or subject_type on every operation-aware submission (see
-    // simulator.build_operation_aware_simulation /
-    // simulator.OPERATION_AWARE_LEGACY_ONLY_FIELDS). No network access.
+    // This is a UX nicety, not the enforcement boundary: with JS disabled,
+    // the page falls back to the server-rendered state for the last
+    // submitted evaluation_type (see `legacy_fields_disabled` /
+    // `oa_only_fields_disabled` below), and the server independently and
+    // unconditionally rejects a non-empty context/subject on operation-aware
+    // submissions (simulator.OPERATION_AWARE_LEGACY_ONLY_FIELDS). The
+    // request_id control here is hidden/disabled on the legacy path only
+    // because this console does not expose it there in this milestone, not
+    // because the legacy contract lacks the field — build_simulation()
+    // neither reads nor rejects a crafted request_id on that path.
+    // No network access.
     (function () {
       var legacyRadio = document.getElementById("evaluation_type_legacy");
       var oaRadio = document.getElementById("evaluation_type_operation_aware");
       var legacyFields = document.getElementById("legacy-only-fields");
       var legacyContext = document.getElementById("legacy-only-context");
+      var oaOnlyFields = document.getElementById("oa-only-fields");
       if (!legacyRadio || !oaRadio || !legacyFields || !legacyContext) return;
       function update() {
         var hide = oaRadio.checked;
@@ -192,6 +204,11 @@
         legacyContext.classList.toggle("is-hidden", hide);
         legacyFields.disabled = hide;
         legacyContext.disabled = hide;
+        if (oaOnlyFields) {
+          var hideOa = !hide;
+          oaOnlyFields.classList.toggle("is-hidden", hideOa);
+          oaOnlyFields.disabled = hideOa;
+        }
       }
       legacyRadio.addEventListener("change", update);
       oaRadio.addEventListener("change", update);
@@ -370,9 +387,11 @@
           Exactly what would be (or was) sent to
           <code>POST /v1/evaluate/operation-aware</code>. These are the values
           the console submitted, not a gateway confirmation of them — the
-          gateway may accept, reject, or (for a caller-supplied request id,
-          not exposed in this milestone) default any of them independently.
-          No subject and no context are ever part of this request.
+          gateway may accept or reject any of them independently. If a
+          request ID was supplied, the gateway preserves it as-is; the
+          gateway only defaults the request ID (to its own generated
+          correlation_id) when this field is omitted. No subject and no
+          context are ever part of this request.
         </p>
         <dl class="kv">
           <dt>Action</dt><dd class="mono">{{ oa_request_summary.action }}</dd>
@@ -380,6 +399,8 @@
           <dd class="mono">{% if oa_request_summary.resource_type %}{{ oa_request_summary.resource_type }}{% else %}<span class="muted">—</span>{% endif %}</dd>
           <dt>Resource ID</dt>
           <dd class="mono">{% if oa_request_summary.resource_id %}{{ oa_request_summary.resource_id }}{% else %}<span class="muted">— (domain-level request)</span>{% endif %}</dd>
+          <dt>Request ID (submitted)</dt>
+          <dd class="mono">{% if oa_request_summary.request_id %}{{ oa_request_summary.request_id }}{% else %}<span class="muted">— (gateway will default it to the generated correlation_id)</span>{% endif %}</dd>
         </dl>
       </article>
     {% endif %}

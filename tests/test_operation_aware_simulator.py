@@ -70,7 +70,7 @@ def test_valid_normalized_request_builds_typed_request():
     assert result.request.action == "read"
     assert result.request.resource_type == "ahu"
     assert result.request.resource_id == "rooftop-1"
-    # Never exposed in this milestone.
+    # Omitted request_id stays None — the console never fabricates one.
     assert result.request.request_id is None
 
 
@@ -89,6 +89,7 @@ def test_values_echo_stripped_submitted_fields():
         "action_verb": "read",
         "resource_type": "ahu",
         "resource_id": "rooftop-1",
+        "request_id": "",
     }
 
 
@@ -352,3 +353,121 @@ def test_resource_id_too_long_is_rejected():
     )
     assert not result.ok
     assert "too long" in result.field_errors["resource_id"]
+
+
+# ---------------------------------------------------------------------------
+# build_operation_aware_simulation — caller-supplied request_id (optional)
+# ---------------------------------------------------------------------------
+
+
+def test_omitted_request_id_builds_request_with_none():
+    """Absent request_id is a first-class, valid state — never fabricated."""
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "resource_id": "rooftop-1"}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id is None
+
+
+def test_empty_request_id_builds_request_with_none():
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "request_id": ""}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id is None
+
+
+def test_whitespace_only_request_id_is_treated_as_absent():
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "request_id": "   "}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id is None
+
+
+def test_valid_request_id_is_carried_through_verbatim():
+    result = build_operation_aware_simulation(
+        {
+            "action_verb": "read",
+            "resource_type": "ahu",
+            "resource_id": "rooftop-1",
+            "request_id": "operator-chosen-req-42",
+        }
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id == "operator-chosen-req-42"
+
+
+def test_request_id_is_stripped():
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "request_id": "  req-1  "}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id == "req-1"
+    assert result.values["request_id"] == "req-1"
+
+
+def test_request_id_never_defaulted_to_correlation_or_trace_by_console():
+    """The console never fabricates request_id from anything else — omitting
+    it leaves it None; it is never silently set to some other field's value."""
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "resource_id": "rooftop-1"}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id is None
+
+
+def test_request_id_with_unconventional_characters_is_accepted():
+    """The pinned gateway model has no request-ID-specific safe-character
+    grammar (unlike resource_id), so an opaque value outside that grammar
+    (spaces, punctuation) must not be rejected by this builder — rendering
+    safety is Jinja's job, not input validation's (see the escaping tests in
+    tests/test_simulate_operation_aware_routes.py)."""
+    result = build_operation_aware_simulation(
+        {
+            "action_verb": "read",
+            "resource_type": "ahu",
+            "request_id": "caller value; with punctuation!",
+        }
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id == "caller value; with punctuation!"
+
+
+def test_request_id_with_markup_characters_is_accepted_by_the_builder():
+    """Markup-looking characters are not rejected here — the gateway's
+    request_id contract is a plain string, and HTML safety is enforced at
+    the Jinja rendering boundary, not by narrowing accepted characters."""
+    result = build_operation_aware_simulation(
+        {
+            "action_verb": "read",
+            "resource_type": "ahu",
+            "resource_id": "rooftop-1",
+            "request_id": "<script>alert(1)</script>",
+        }
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id == "<script>alert(1)</script>"
+    assert result.values["action_verb"] == "read"
+    assert result.values["resource_id"] == "rooftop-1"
+
+
+def test_request_id_has_no_console_enforced_length_limit():
+    """The pinned gateway model defines no request-ID-specific maximum
+    length, so this builder does not impose one (unlike resource_id, which
+    genuinely is bounded by MAX_FIELD_LEN)."""
+    long_value = "x" * 200
+    result = build_operation_aware_simulation(
+        {"action_verb": "read", "resource_type": "ahu", "request_id": long_value}
+    )
+    assert result.ok
+    assert result.request is not None
+    assert result.request.request_id == long_value
