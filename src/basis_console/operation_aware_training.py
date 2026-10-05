@@ -116,7 +116,7 @@ ECOSYSTEM_FLOW_STAGES: tuple[EcosystemStage, ...] = (
         owner="basis-gateway",
         description=(
             "The gateway classifies whether the authenticated caller is a "
-            "trusted operation producer (an adapter or identity service) and, "
+            "trusted operation producer and, "
             "on that basis, decides which request fields the caller may "
             "supply at all. An ordinary console session is not a trusted "
             "producer and has no code path capable of setting a "
@@ -533,8 +533,8 @@ CONTEXT_AND_PRODUCER_TRUST_POINTS: tuple[str, ...] = (
     "Trusted-producer fields (operation intent, location, device, protocol "
     "context, safety context, environment context, risk context, and "
     "identity/adapter evidence references) represent governed operational "
-    "evidence that only a trusted operation producer — an adapter or "
-    "identity service — may supply.",
+    "evidence that only a trusted operation producer may supply, through "
+    "the producer/context-trust path.",
     "basis-console is an operator-facing console, not an adapter or a "
     "trusted operation producer, so it never exposes editable controls for "
     "any of those nine fields.",

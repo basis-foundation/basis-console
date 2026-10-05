@@ -59,6 +59,57 @@ These are invariants, not preferences. Phase 1 honors them by construction.
 6. **The console is optional.** BASIS must function correctly without the
    console. Enforcement correctness, audit completeness, and authorization
    semantics must not depend on the console's presence.
+7. **No OT operation authority.** The console is not a supervisory platform
+   and does not originate, dispatch, or execute OT operations. See the next
+   section.
+
+## Relationship to OT operations (ADR-0023)
+
+Accepted ADR-0023 (Supervisory Platform and Administrative Interface
+Boundary) and `basis-console.md` Design Invariants 11–15 set this boundary.
+This repository conforms to it as follows:
+
+- **Administer, don't operate.** The console administers, observes, explains,
+  diagnoses, and simulates BASIS. Operator-driven OT intent originates in an
+  upstream supervisory platform and reaches BASIS through producer intake and
+  the operation-producer role. In this document, *operator* means a person
+  who operates or investigates BASIS, not an OT operator.
+- **Administrative context only.** The console has no login or session
+  today. Gateway-backed evaluation authenticates to the gateway with a
+  deployment-configured `GATEWAY_BEARER_TOKEN`, and the gateway derives the
+  evaluation's subject from that token. That credential authenticates the
+  direct evaluation subject but does not confer OT operation-initiation,
+  producer, dispatch, or execution authority. If interactive sign-in is ever added, it establishes a BASIS
+  administrative context only. It confers no OT operation-initiation or
+  execution authority and no authorization-subject standing on any OT
+  operation. Authorization subjects never need a console session. Sharing
+  an enterprise IdP or SSO would not share authorization.
+- **Direct-path evaluation is non-dispatchable.** Both simulator contracts
+  (`/v1/evaluate`, `/v1/evaluate/operation-aware`) are the gateway's direct,
+  non-producer path (ADR-0020 Decision 6). The console renders the returned
+  disposition as authorization information. `ALLOW` is not `DISPATCHED`, and
+  the console has no execution or dispatch state. Operator and Training modes
+  submit identical requests.
+- **No privileged path.** The console has no path to producer intake,
+  operation-producer admission, the authorization-to-execution binding, or a
+  protocol executor, and implements none of those components. Today the
+  gateway client calls only `/health`, `/ready`, `/v1/evaluate`, and
+  `/v1/evaluate/operation-aware`. That list describes the current
+  implementation and is not an ADR-0023 limit: the console may add
+  gateway-mediated administrative APIs that stay within BASIS administrative
+  authority and off the governed OT operation path.
+- **Future capability stays open, but only as a governed producer.**
+  Real OT operations are not supported from the console. Under ADR-0023
+  Decision 7, a future BASIS-native capability that originates real
+  operations would first need its own architecture decision. It would then
+  be an ordinary governed producer on the same path as any external origin,
+  with no special trust because it is part of BASIS.
+
+`tests/test_adr0023_console_boundary.py` makes the runtime parts of this
+boundary executable. It tests the prohibited categories (simulator traffic
+off the direct evaluation path, kernel, producer-runtime, or OT protocol-client
+dependencies, and execution state in results), not the current list of routes,
+gateway endpoints, or their names.
 
 ## Gateway-first integration rule
 

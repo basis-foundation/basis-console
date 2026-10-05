@@ -8,7 +8,9 @@
     This is the human-facing operational interface for the BASIS ecosystem. It is
     read-oriented and gateway-first: live gateway health/readiness and gateway-backed
     decision evaluation when configured, alongside clearly-labelled sample views that
-    explain policy, audit, identity, and resource concepts.
+    explain policy, audit, identity, and resource concepts. It administers,
+    inspects, and explains BASIS itself; it is not a supervisory or control
+    platform for OT equipment.
   </p>
 
   <p class="notice ok-notice">
@@ -111,6 +113,14 @@
         belong to <code>basis-core</code>, <code>basis-gateway</code>, and
         <code>basis-adapters</code>. In production the console reaches the system
         only through the gateway.
+      </p>
+      <p>
+        It is also not a supervisory platform. Operator-driven OT intent
+        originates in an upstream supervisory platform (a BAS/BMS, HMI, SCADA,
+        or similar application), not here. The console does not operate
+        equipment or dispatch operations, and the console has no login of its
+        own; any future console sign-in would establish a BASIS administrative
+        context only, never authority over OT operations.
       </p>
     </section>
   {% endif %}

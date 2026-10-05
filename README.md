@@ -50,7 +50,35 @@ It never becomes the system behind the interface. Specifically, it does **not**:
 - produce, store, or reinterpret audit records — those come from `basis-core` and
   `basis-gateway`;
 - own a resource inventory or discover devices;
-- bypass the gateway to reach the kernel directly.
+- bypass the gateway to reach the kernel directly;
+- act as a supervisory platform or operate OT equipment (see below).
+
+### Relationship to OT operations
+
+`basis-console` administers, observes, explains, diagnoses, and simulates BASIS.
+It is not the supervisory or control platform through which OT equipment is
+operated. This follows the accepted BASIS architecture (ADR-0023, Supervisory
+Platform and Administrative Interface Boundary):
+
+- **OT intent originates upstream.** Operator-driven OT operations start in an
+  upstream supervisory platform (a BAS/BMS, HMI, SCADA, or similar application)
+  and reach BASIS through its governed producer path, not through the console.
+- **No console session carries OT authority.** The console has no login or
+  session of its own today. Gateway-backed evaluation uses a server-side
+  `GATEWAY_BEARER_TOKEN` configured by the deployment. If the console gains
+  interactive sign-in in the future, that sign-in establishes a BASIS
+  administrative context only. It grants no authority to initiate or execute OT
+  operations, and it does not make anyone the authorization subject of an OT
+  operation. Authorization subjects never need a console session.
+- **Evaluation is not execution.** Decision Simulator submissions go to the
+  gateway's direct evaluation endpoints. A returned `allow` is authorization
+  information, not permission to execute, and nothing is dispatched.
+- **No privileged path.** The console has no path to producer intake, operation-
+  producer admission, the authorization-to-execution binding, or a protocol
+  executor. Real OT operations are not supported from the console. Any future
+  BASIS-native capability that originates real operations would need its own
+  architecture decision and would be an ordinary governed producer, with no
+  special trust for being part of BASIS.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full set of boundaries
 and design invariants, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for what is in and
@@ -111,7 +139,9 @@ returned (and an explicit "not returned by the gateway" when not), and the raw
 redacted response. A bearer token is required because the gateway derives the
 subject identity from the verified token and rejects unauthenticated calls; obtain
 one out-of-band — the console does no OIDC login and issues no tokens. When the
-token is absent, the simulator stays preview-only and says so.
+token is absent, the simulator stays preview-only and says so. "Live" here means
+a real gateway-backed *authorization evaluation*. It is not OT execution, and
+an `allow` result dispatches nothing.
 
 **Operation-aware evaluation.** The Decision Simulator also offers a separate,
 explicit "Operation-aware" evaluation contract alongside the legacy one above —
@@ -291,6 +321,10 @@ Operator → basis-console → basis-gateway → basis-core
   fields are preview-only.
 - **Relay, don't reinterpret.** The console displays the gateway's decision and
   composition evidence verbatim.
+- **Administrative path only.** This path carries administration, inspection,
+  diagnostics, and simulation. It never joins the governed OT operation path
+  (upstream supervisory platform → producer intake → operation producer →
+  gateway → kernel → binding → protocol executor).
 
 The full boundary set, the gateway/kernel/adapter relationships, and the
 phase-by-phase design notes live in [`docs/architecture.md`](docs/architecture.md).
