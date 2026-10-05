@@ -16,12 +16,14 @@ Rendering uses Jinja2 with templates and static assets served locally from this
 package, so the console has no CDN or internet dependency and works air-gapped.
 
 Boundary reminder: none of these views evaluate authorization, authenticate
-users, or contact basis-core. The simulator POST always builds a preview of the
-request shape (preview mode). As of Phase 4 it can also, when configured,
-forward the request to basis-gateway's /v1/evaluate and display the gateway's
-decision verbatim (gateway-evaluation mode) — the console never evaluates
-locally, never sends a subject (identity comes from the gateway's Bearer token),
-and never reinterprets the gateway's decision.
+users, or contact basis-core. None of them operates OT equipment or dispatches
+an operation (ADR-0023): the console has no path to producer intake, the
+authorization-to-execution binding, or a protocol executor. The simulator POST
+always builds a preview of the request shape (preview mode). As of Phase 4 it
+can also, when configured, forward the request to basis-gateway's /v1/evaluate
+and display the gateway's decision verbatim (gateway-evaluation mode) — the
+console never evaluates locally, never sends a subject (identity comes from the
+gateway's Bearer token), and never reinterprets the gateway's decision.
 """
 
 from __future__ import annotations
@@ -103,6 +105,19 @@ SIMULATOR_IDENTITY_NOTICE = (
     "console does not evaluate the request, it only displays the gateway's response."
 )
 
+# Note stating that gateway-backed evaluation is authorization evaluation only
+# (ADR-0023 Decision 6; ADR-0020 Decision 6). Both evaluation contracts submit
+# on the gateway's direct, non-producer path, so a returned disposition is not
+# bound to any operation and cannot support dispatch. Shown in both
+# presentation modes and for both contracts.
+SIMULATOR_NON_DISPATCH_NOTICE = (
+    "Authorization evaluation only. The simulator submits on basis-gateway's "
+    "direct evaluation path, not as a governed OT operation, and nothing is "
+    "dispatched to any device. An ALLOW here means policy permitted this "
+    "evaluation request; it is not permission to execute and not evidence that "
+    "anything was executed."
+)
+
 # Note explaining the operation-aware preview boundary (PR 4). Distinct from
 # SIMULATOR_NO_EVAL_NOTICE because the operation-aware preview shows a
 # strictly narrower, differently-shaped request (Section 4 of the
@@ -123,9 +138,9 @@ OPERATION_AWARE_CONTEXT_NOTICE = (
     "Operation-aware evaluation submits only action, resource type, resource "
     "ID, and an optional caller-supplied request ID — no subject and no "
     "context. Unlike legacy evaluation, this endpoint has no field for "
-    "caller-supplied context: operation-aware context is owned by trusted "
-    "operation producers (adapters, identity), not by an ordinary console "
-    "session, so there is no context control here."
+    "caller-supplied context. Governed operational context belongs to the "
+    "producer/context-trust path, not the console's direct evaluation path, "
+    "so there is no context control here."
 )
 
 # Note explaining the caller-supplied request_id boundary. Distinct from
@@ -274,6 +289,7 @@ def _simulate_context(request: Request) -> dict[str, object]:
     ctx["notice"] = SAMPLE_DATA_NOTICE
     ctx["no_eval_notice"] = SIMULATOR_NO_EVAL_NOTICE
     ctx["identity_notice"] = SIMULATOR_IDENTITY_NOTICE
+    ctx["non_dispatch_notice"] = SIMULATOR_NON_DISPATCH_NOTICE
     ctx["operation_aware_no_eval_notice"] = OPERATION_AWARE_NO_EVAL_NOTICE
     ctx["operation_aware_context_notice"] = OPERATION_AWARE_CONTEXT_NOTICE
     ctx["operation_aware_request_id_notice"] = OPERATION_AWARE_REQUEST_ID_NOTICE

@@ -5,6 +5,29 @@ All notable changes to `basis-console` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **ADR-0023 conformance.** The UI and docs now say that `basis-console`
+  administers BASIS and is not an OT supervisory or control platform. The
+  Decision Simulator states, in both presentation modes and for both
+  evaluation contracts, that gateway-backed evaluation is authorization
+  evaluation only: nothing is dispatched, and `ALLOW` is not execution. The
+  page footer, home page, Training banner, README, and `docs/architecture.md`
+  are clarified to match. Runtime behavior and gateway calls are unchanged.
+
+### Added
+
+- `tests/test_adr0023_console_boundary.py` — regression tests for the
+  ADR-0023 boundary. They check that simulator submissions stay on the
+  gateway's direct evaluation endpoints; that preview makes no evaluation
+  call; that the console imports no kernel, producer-runtime, or OT protocol
+  client code; that results carry no dispatch or execution state; and that
+  Operator and Training modes submit identical evaluation requests. They do
+  not freeze the current routes or gateway endpoints, or their names, so
+  conforming administrative APIs can be added later.
+
 ## [0.2.0] - 2026-08-08
 
 `v0.2.0` brings **operation-aware authorization** into the Decision Simulator

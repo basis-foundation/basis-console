@@ -6,11 +6,11 @@
     Construct a realistic authorization request — a subject, an action verb, a
     resource type, and a local resource ID — and preview the normalized request
     shape. When configured, you can optionally submit it to
-    <code>basis-gateway</code> for a live decision. The gateway composes the
+    <code>basis-gateway</code> for a live authorization decision. The gateway composes the
     canonical action and resource identifier; the console only submits the
     normalized request and displays the gateway's response. This is an
     educational, operator-facing builder, not an enforcement path: the console
-    never decides.
+    never decides, and no evaluation here dispatches an OT operation.
   </p>
 
   <p class="notice warn-notice">{{ no_eval_notice }}</p>
@@ -259,6 +259,7 @@
   <section class="gateway-eval" aria-label="Gateway evaluation">
     <h2>Gateway evaluation</h2>
     <p class="notice">{{ identity_notice }}</p>
+    <p class="notice non-dispatch-notice">{{ non_dispatch_notice }}</p>
 
     {% if not gateway_configured %}
       <p class="notice warn-notice">
@@ -355,6 +356,7 @@
   <section class="gateway-eval oa-eval" aria-label="Operation-aware evaluation">
     <h2>Operation-aware evaluation</h2>
     <p class="notice">{{ operation_aware_context_notice }}</p>
+    <p class="notice non-dispatch-notice">{{ non_dispatch_notice }}</p>
     <p class="notice warn-notice">{{ operation_aware_no_eval_notice }}</p>
 
     {% if not gateway_configured %}
@@ -590,6 +592,15 @@
         calls <code>basis-core</code> directly:
       </p>
       <p class="mono">Operator → basis-console → basis-gateway → basis-core</p>
+      <p>
+        This is the console's direct evaluation path, and it ends at the
+        decision. It is separate from the governed OT operation path, which
+        starts in an upstream supervisory platform and passes through producer
+        intake, the operation producer, the gateway, the kernel, the
+        authorization-to-execution binding, and a protocol executor. The
+        console has no path into that chain, so a decision returned here
+        cannot be dispatched.
+      </p>
     </section>
   {% endif %}
 {% endblock %}
